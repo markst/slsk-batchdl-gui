@@ -1,0 +1,50 @@
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.logo {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #e0e0e0;
+    text-decoration: none;
+    letter-spacing: -0.5px;
+}
+
+.logo-accent {
+    color: #6ee7b7;
+}
+
+.app-main {
+    flex: 1;
+    padding: 2rem;
+    max-width: 960px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+#blazor-error-ui {
+    background: #1a1a2e;
+    border-top: 2px solid #e74c3c;
+    bottom: 0;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    color: #e0e0e0;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

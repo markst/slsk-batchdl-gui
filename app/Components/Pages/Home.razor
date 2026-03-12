@@ -1,0 +1,109 @@
+﻿@page "/"
+@using SldlWeb.Models
+@using SldlWeb.Services
+@inject DownloadService DownloadService
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>sldl web</PageTitle>
+
+<section class="input-section">
+    <h2>Download Music</h2>
+    <p class="subtitle">Paste a Spotify playlist URL, YouTube URL, search query, or CSV track list.</p>
+
+    <div class="input-form">
+        <textarea @bind="inputText" @bind:event="oninput"
+                  placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
+                  rows="4"
+                  class="input-textarea"></textarea>
+        <button @onclick="Submit" class="btn-submit">
+            <span>Download</span>
+        </button>
+    </div>
+</section>
+
+@if (jobs.Any())
+{
+    <section class="jobs-section">
+        <h3>Jobs</h3>
+        <div class="job-list">
+            @foreach (var job in jobs)
+            {
+                <div class="job-card" @onclick="() => NavigateToJob(job.Id)">
+                    <div class="job-header">
+                        <span class="job-type badge-@job.InputType.ToLower()">@job.InputType</span>
+                        <span class="job-status status-@job.Status.ToString().ToLower()">@job.Status</span>
+                    </div>
+                    <div class="job-input">@Truncate(job.Input, 80)</div>
+                    <div class="job-meta">
+                        @if (job.TotalTracks > 0)
+                        {
+                            <span>@job.DownloadedTracks / @job.TotalTracks tracks</span>
+                        }
+                        <span class="job-time">@job.CreatedAt.ToLocalTime().ToString("HH:mm")</span>
+                    </div>
+                    @if (job.Status == JobStatus.Running && job.TotalTracks > 0)
+                    {
+                        <div class="job-progress-bar">
+                            <div class="job-progress-fill" style="width: @ProgressPercent(job)%"></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private string inputText = "";
+    private bool isSubmitting;
+    private List<DownloadJob> jobs = new();
+    private System.Threading.Timer? refreshTimer;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            RefreshJobs();
+            refreshTimer = new System.Threading.Timer(_ =>
+            {
+                _ = InvokeAsync(() =>
+                {
+                    RefreshJobs();
+                    StateHasChanged();
+                });
+            }, null, 1000, 1000);
+            StateHasChanged();
+        }
+    }
+
+    private void RefreshJobs()
+    {
+        jobs = DownloadService.GetAllJobs().ToList();
+    }
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(inputText)) return;
+        isSubmitting = true;
+
+        var job = DownloadService.CreateJob(inputText);
+        inputText = "";
+        isSubmitting = false;
+
+        Nav.NavigateTo($"/job/{job.Id}");
+    }
+
+    private void NavigateToJob(string id) => Nav.NavigateTo($"/job/{id}");
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "...";
+
+    private static double ProgressPercent(DownloadJob job) =>
+        job.TotalTracks > 0 ? Math.Round((double)job.DownloadedTracks / job.TotalTracks * 100, 1) : 0;
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}

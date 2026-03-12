@@ -1,0 +1,316 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+a { color: #6ee7b7; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Input Section ===== */
+.input-section { margin-bottom: 2.5rem; }
+.input-section h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+.subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
+
+.input-form { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.input-textarea {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+    transition: border-color 0.2s;
+}
+.input-textarea:focus {
+    outline: none;
+    border-color: #6ee7b7;
+}
+.input-textarea::placeholder { color: #555; }
+
+.btn-submit {
+    align-self: flex-end;
+    background: #6ee7b7;
+    color: #0f0f0f;
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 2rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+}
+.btn-submit:hover:not(:disabled) { background: #5dd4a8; }
+.btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== Jobs Section ===== */
+.jobs-section h3 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #aaa; }
+.job-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.job-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+.job-card:hover { border-color: #444; background: #1f1f1f; }
+
+.job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.35rem;
+}
+
+.job-input {
+    font-size: 0.85rem;
+    color: #bbb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.35rem;
+}
+
+.job-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: #666;
+}
+.job-time { margin-left: auto; }
+
+.job-progress-bar {
+    margin-top: 0.5rem;
+    height: 3px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.job-progress-fill {
+    height: 100%;
+    background: #6ee7b7;
+    transition: width 0.3s;
+}
+
+/* ===== Badges ===== */
+.badge-spotify, .badge-youtube, .badge-bandcamp, .badge-csv, .badge-search {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.badge-spotify { background: #1db954; color: #fff; }
+.badge-youtube { background: #ff0000; color: #fff; }
+.badge-bandcamp { background: #629aa9; color: #fff; }
+.badge-csv { background: #555; color: #ddd; }
+.badge-search { background: #444; color: #ddd; }
+
+/* ===== Status ===== */
+.job-status, .state-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.status-queued { color: #888; }
+.status-running { color: #fbbf24; }
+.status-completed { color: #6ee7b7; }
+.status-failed { color: #f87171; }
+.status-cancelled { color: #888; }
+
+/* ===== Job Detail ===== */
+.back-link {
+    display: inline-block;
+    margin-bottom: 1.5rem;
+    color: #888;
+    font-size: 0.85rem;
+}
+.back-link:hover { color: #e0e0e0; }
+
+.job-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+}
+.job-detail-header h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.job-input-full {
+    font-size: 0.85rem;
+    word-break: break-all;
+    max-width: 600px;
+    margin-top: 0.25rem;
+}
+
+.job-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.btn-cancel {
+    background: transparent;
+    border: 1px solid #555;
+    color: #e0e0e0;
+    border-radius: 6px;
+    padding: 0.35rem 1rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.btn-cancel:hover { border-color: #f87171; color: #f87171; }
+
+.error-banner {
+    background: #2a1515;
+    border: 1px solid #5a2020;
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    color: #f87171;
+    font-size: 0.85rem;
+    margin-bottom: 1.5rem;
+}
+
+.muted { color: #666; }
+.text-red { color: #f87171; }
+
+/* ===== Overall Progress ===== */
+.overall-progress { margin-bottom: 1.5rem; }
+
+.progress-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+}
+
+.progress-bar-lg {
+    height: 6px;
+    background: #2a2a2a;
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+}
+.progress-fill-success {
+    height: 100%;
+    background: #6ee7b7;
+    transition: width 0.3s;
+}
+.progress-fill-fail {
+    height: 100%;
+    background: #f87171;
+    transition: width 0.3s;
+}
+
+/* ===== Track List ===== */
+.track-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.track-row {
+    display: grid;
+    grid-template-columns: 2rem 1fr auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid #1a1a1a;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+}
+.track-row:hover { background: #1a1a1a; }
+
+.track-index {
+    color: #555;
+    text-align: right;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.track-title { font-weight: 500; }
+.track-artist { font-size: 0.8rem; color: #888; }
+
+.track-meta {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #666;
+}
+.track-ext { 
+    background: #2a2a2a; 
+    padding: 0.1rem 0.35rem; 
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.track-state {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 100px;
+    justify-content: flex-end;
+}
+
+.track-progress-bar {
+    width: 60px;
+    height: 4px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.track-progress-fill {
+    height: 100%;
+    background: #6ee7b7;
+    transition: width 0.3s;
+}
+.track-percent {
+    font-size: 0.75rem;
+    color: #888;
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+/* State-based row styling */
+.state-downloaded .track-title,
+.state-alreadyexists .track-title { color: #6ee7b7; }
+.state-failed .track-title { color: #f87171; }
+.state-downloading .track-title { color: #fbbf24; }
+.state-searching .track-title { color: #93c5fd; }
+
+.state-downloaded .state-label { color: #6ee7b7; }
+.state-alreadyexists .state-label { color: #6ee7b7; }
+.state-failed .state-label { color: #f87171; }
+.state-found .state-label { color: #93c5fd; }
+.state-searching .state-label { color: #93c5fd; }
+
+/* ===== Blazor Error ===== */
+.blazor-error-boundary {
+    background: #b32121;
+    padding: 1rem;
+    color: white;
+    border-radius: 6px;
+}
+.blazor-error-boundary::after { content: "An error has occurred."; }
