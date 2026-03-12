@@ -1,0 +1,22 @@
+# Build outputs
+app/bin/
+app/obj/
+sldl/slsk-batchdl/bin/
+sldl/slsk-batchdl/obj/
+
+# Environment
+.env
+.env.local
+
+# Downloads
+downloads/
+config/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo

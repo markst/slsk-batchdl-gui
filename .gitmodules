@@ -1,0 +1,3 @@
+[submodule "sldl"]
+	path = sldl
+	url = https://github.com/fiso64/slsk-batchdl.git
