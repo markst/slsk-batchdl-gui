@@ -381,23 +381,126 @@ a:hover { text-decoration: underline; }
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.75rem;
 }
 
-.option-checkbox {
+.form-options {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+}
+
+.form-options-divider {
+    width: 1px;
+    height: 16px;
+    background: #2e2e2e;
+    flex-shrink: 0;
+}
+
+/* Toggle switch */
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #888;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.toggle-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 28px;
+    height: 16px;
+    background: #2e2e2e;
+    border-radius: 8px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.toggle-label input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #666;
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s, background 0.2s;
+}
+
+.toggle-label input[type="checkbox"]:checked {
+    background: #1a3d30;
+}
+
+.toggle-label input[type="checkbox"]:checked::after {
+    left: 15px;
+    background: #6ee7b7;
+}
+
+/* Profile custom dropdown */
+.profile-dropdown {
+    position: relative;
+}
+
+.profile-trigger {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.85rem;
-    color: #aaa;
+    background: none;
+    border: none;
     cursor: pointer;
-    user-select: none;
+    padding: 0;
+    font-size: 0.8rem;
 }
 
-.option-checkbox input[type="checkbox"] {
-    accent-color: #6ee7b7;
+.profile-label-text {
+    color: #555;
+}
+
+.profile-value {
+    color: #999;
+}
+
+.profile-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 6px;
+    padding: 0.25rem;
+    min-width: 120px;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.profile-option {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    color: #aaa;
+    border-radius: 4px;
     cursor: pointer;
-    width: 14px;
-    height: 14px;
+    white-space: nowrap;
+}
+
+.profile-option:hover {
+    background: #252525;
+    color: #ddd;
+}
+
+.profile-option.selected {
+    color: #6ee7b7;
 }
 
 /* ===== Blazor Error ===== */

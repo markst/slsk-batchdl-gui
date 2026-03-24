@@ -21,7 +21,9 @@ public class DownloadService
         _logger = logger;
     }
 
-    public DownloadJob CreateJob(string input, bool albumMode = false)
+    public IReadOnlyList<string> GetAvailableProfiles() => Config.GetAvailableProfiles();
+
+    public DownloadJob CreateJob(string input, bool albumMode = false, string? profile = null)
     {
         var job = new DownloadJob
         {
@@ -29,6 +31,7 @@ public class DownloadService
             InputType = DetectInputType(input),
             DownloadPath = GetDownloadPath(),
             AlbumMode = albumMode,
+            Profile = profile,
         };
         _jobs.TryAdd(job.Id, job);
         _ = Task.Run(() => ProcessJobAsync(job));
@@ -181,7 +184,8 @@ public class DownloadService
             input = csvPath;
         }
 
-        args.Add(input);
+        if (!string.IsNullOrEmpty(input))
+            args.Add(input);
         args.Add("--path"); args.Add(job.DownloadPath);
 
         var username = _config["Sldl:Username"];
@@ -208,6 +212,9 @@ public class DownloadService
             if (_config.GetValue<bool>("Sldl:MockFilesNoReadTags"))
                 args.Add("--mock-files-no-read-tags");
         }
+
+        if (!string.IsNullOrEmpty(job.Profile))
+        { args.Add("--profile"); args.Add(job.Profile); }
 
         args.Add("--no-listen");
         args.Add("--write-index");
