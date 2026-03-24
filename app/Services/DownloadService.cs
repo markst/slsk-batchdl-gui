@@ -8,6 +8,7 @@ namespace SldlWeb.Services;
 public class DownloadService
 {
     private readonly ConcurrentDictionary<string, DownloadJob> _jobs = new();
+    private readonly ConcurrentDictionary<string, DownloaderApplication> _runningApps = new();
     private readonly SemaphoreSlim _jobSemaphore = new(1);
     private readonly IHubContext<DownloadHub> _hub;
     private readonly IConfiguration _config;
@@ -39,8 +40,10 @@ public class DownloadService
 
     public bool CancelJob(string id)
     {
-        if (_jobs.TryGetValue(id, out var job) && job.Status == JobStatus.Running)
+        if (_jobs.TryGetValue(id, out var job) && (job.Status == JobStatus.Running || job.Status == JobStatus.Queued))
         {
+            if (_runningApps.TryGetValue(id, out var app))
+                app.Cancel();
             job.Cts.Cancel();
             job.Status = JobStatus.Cancelled;
             _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
@@ -73,7 +76,18 @@ public class DownloadService
 
     private async Task ProcessJobAsync(DownloadJob job)
     {
-        await _jobSemaphore.WaitAsync(job.Cts.Token);
+        try
+        {
+            await _jobSemaphore.WaitAsync(job.Cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled while queued — semaphore was never acquired
+            job.Status = JobStatus.Cancelled;
+            job.CompletedAt = DateTime.UtcNow;
+            await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
+            return;
+        }
 
         try
         {
@@ -89,9 +103,36 @@ public class DownloadService
 
             var config = new Config(args.ToArray());
             config.noProgress = true; // no console progress bars
+            config.connectTimeout = 30000; // 30s to handle slow Soulseek server
 
             var app = new DownloaderApplication(config, progressReporter: reporter);
-            await app.RunAsync();
+            _runningApps.TryAdd(job.Id, app);
+            try
+            {
+                // Run sldl in-process. Use a completion source so we can
+                // bail out immediately when the job is cancelled — sldl's
+                // internal loops don't check our cancellation token.
+                var runTask = app.RunAsync();
+                var tcs = new TaskCompletionSource();
+                using var reg = job.Cts.Token.Register(() => tcs.TrySetResult());
+
+                var completed = await Task.WhenAny(runTask, tcs.Task);
+                if (completed == tcs.Task)
+                {
+                    // Cancellation won — tell sldl to stop too, then give
+                    // it a moment to wind down before we move on.
+                    app.Cancel();
+                    _ = runTask.ContinueWith(_ => { }, TaskScheduler.Default);
+                    throw new OperationCanceledException();
+                }
+
+                // If RunAsync faulted, observe the exception
+                await runTask;
+            }
+            finally
+            {
+                _runningApps.TryRemove(job.Id, out _);
+            }
 
             // Determine final status from tracks
             if (job.Cts.IsCancellationRequested)
@@ -128,11 +169,14 @@ public class DownloadService
         var args = new List<string>();
         var input = job.Input;
 
-        // CSV input: write to temp file
-        if (job.InputType == "CSV")
+        // CSV or tracklist input: write to temp CSV file
+        if (job.InputType == "CSV" || job.InputType == "Tracklist")
         {
             var csvPath = Path.Combine(job.DownloadPath, "_input.csv");
-            File.WriteAllText(csvPath, input);
+            var csvContent = job.InputType == "Tracklist"
+                ? ConvertTracklistToCsv(input)
+                : input;
+            File.WriteAllText(csvPath, csvContent);
             input = csvPath;
         }
 
@@ -153,6 +197,7 @@ public class DownloadService
         var minBitrate = _config["Sldl:MinBitrate"] ?? "200";
         args.Add("--pref-format"); args.Add(format);
         args.Add("--pref-min-bitrate"); args.Add(minBitrate);
+        args.Add("--no-listen");
         args.Add("--write-index");
 
         return args;
@@ -165,7 +210,35 @@ public class DownloadService
         if (input.Contains("bandcamp.com")) return "Bandcamp";
         if (input.Contains(',') && (input.Contains("Artist") || input.Contains("Title") || input.Split('\n').Length > 1))
             return "CSV";
+
+        // Multi-line text with " - " separators → tracklist
+        var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length > 1 && lines.Count(l => l.Contains(" - ")) > lines.Length / 2)
+            return "Tracklist";
+
         return "Search";
+    }
+
+    private static string ConvertTracklistToCsv(string input)
+    {
+        var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Artist,Title");
+        foreach (var line in lines)
+        {
+            var parts = line.Split(" - ", 2, StringSplitOptions.TrimEntries);
+            var artist = parts.Length == 2 ? CsvEscape(parts[0]) : "";
+            var title = parts.Length == 2 ? CsvEscape(parts[1]) : CsvEscape(line);
+            csv.AppendLine($"{artist},{title}");
+        }
+        return csv.ToString();
+    }
+
+    private static string CsvEscape(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\""; 
+        return value;
     }
 
     private string GetDownloadPath()
