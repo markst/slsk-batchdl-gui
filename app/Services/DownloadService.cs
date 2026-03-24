@@ -21,13 +21,14 @@ public class DownloadService
         _logger = logger;
     }
 
-    public DownloadJob CreateJob(string input)
+    public DownloadJob CreateJob(string input, bool albumMode = false)
     {
         var job = new DownloadJob
         {
             Input = input.Trim(),
             InputType = DetectInputType(input),
             DownloadPath = GetDownloadPath(),
+            AlbumMode = albumMode,
         };
         _jobs.TryAdd(job.Id, job);
         _ = Task.Run(() => ProcessJobAsync(job));
@@ -197,6 +198,17 @@ public class DownloadService
         var minBitrate = _config["Sldl:MinBitrate"] ?? "200";
         args.Add("--pref-format"); args.Add(format);
         args.Add("--pref-min-bitrate"); args.Add(minBitrate);
+        if (job.AlbumMode)
+            args.Add("--album");
+
+        var mockFilesDir = _config["Sldl:MockFilesDir"];
+        if (!string.IsNullOrEmpty(mockFilesDir))
+        {
+            args.Add("--mock-files-dir"); args.Add(mockFilesDir);
+            if (_config.GetValue<bool>("Sldl:MockFilesNoReadTags"))
+                args.Add("--mock-files-no-read-tags");
+        }
+
         args.Add("--no-listen");
         args.Add("--write-index");
 

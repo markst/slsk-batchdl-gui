@@ -16,6 +16,10 @@ config/
 .DS_Store
 Thumbs.db
 
+# Local config overrides
+appsettings.Local.json
+appsettings.*.Local.json
+
 # IDE
 .idea/
 *.swp
