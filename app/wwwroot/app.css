@@ -104,7 +104,7 @@ a:hover { text-decoration: underline; }
 }
 
 /* ===== Badges ===== */
-.badge-spotify, .badge-youtube, .badge-bandcamp, .badge-csv, .badge-search {
+.badge-spotify, .badge-youtube, .badge-bandcamp, .badge-csv, .badge-search, .badge-tracklist {
     display: inline-block;
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
@@ -117,6 +117,7 @@ a:hover { text-decoration: underline; }
 .badge-youtube { background: #ff0000; color: #fff; }
 .badge-bandcamp { background: #629aa9; color: #fff; }
 .badge-csv { background: #555; color: #ddd; }
+.badge-tracklist { background: #7c5cbf; color: #fff; }
 .badge-search { background: #444; color: #ddd; }
 
 /* ===== Status ===== */
