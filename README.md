@@ -5,35 +5,37 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 ## Features
 
 - Paste a Spotify playlist URL, CSV content, or search query
-- Real-time download progress via WebSocket
-- Track-by-track status (Downloaded / Failed / Queued)
-- Download completed files individually or as a ZIP
-- Dark UI, single-user, local-first
+- Real-time download progress via SignalR
+- Track-by-track status with progress bars
+- Dark theme UI
+- Single .NET process — no separate frontend server
 
 ## Architecture
 
 ```
-┌─────────────┐     WebSocket / REST     ┌──────────────┐     subprocess     ┌──────┐
-│  Next.js UI │  ◄──────────────────────► │  .NET API    │  ──────────────►  │ sldl │
-│  (port 3000)│                           │  (port 5000) │                   │ CLI  │
-└─────────────┘                           └──────────────┘                   └──────┘
-                                                │
-                                           ┌────▼────┐
-                                           │downloads│
-                                           │ volume  │
-                                           └─────────┘
+┌──────────────────────────────────────────────┐
+│              Blazor Server App               │
+│                                              │
+│  Browser  ◄──── SignalR ────►  DownloadService │
+│  (Razor)                       │              │
+│                         DownloaderApplication │
+│                         (sldl in-process)     │
+│                                │              │
+│                           ┌────▼────┐         │
+│                           │downloads│         │
+│                           └─────────┘         │
+└──────────────────────────────────────────────┘
 ```
 
-- **sldl** is included as a git submodule and built as a standalone binary
-- The .NET API server spawns sldl as a child process per job, parses stdout and monitors the index file for track status
-- The Next.js frontend connects via WebSocket for real-time updates, with REST polling as fallback
+- **sldl** is included as a git submodule and referenced as a project dependency
+- The Blazor Server app calls sldl's `DownloaderApplication` directly in-process
+- A `SignalRProgressReporter` implements sldl's `IProgressReporter` interface to push real-time updates to the browser
 
-## Quick Start (Local Development)
+## Quick Start (Local)
 
 ### Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Node.js 20+](https://nodejs.org/)
 - A Soulseek account (create one at https://www.slsknet.org/)
 - (Optional) Spotify API credentials for playlist URL support
 
@@ -44,38 +46,40 @@ git clone --recurse-submodules <repo-url>
 cd slsk-batch-downloader
 ```
 
-### 2. Build sldl
+### 2. Configure
 
-```bash
-cd sldl
-dotnet publish slsk-batchdl/slsk-batchdl.csproj -c Release -o ../bin
-cd ..
+Edit `app/appsettings.json` with your credentials:
+
+```json
+{
+  "Sldl": {
+    "Username": "your_soulseek_username",
+    "Password": "your_soulseek_password",
+    "DownloadPath": "./downloads",
+    "PreferredFormat": "mp3",
+    "MinBitrate": "200"
+  },
+  "Spotify": {
+    "ClientId": "",
+    "ClientSecret": ""
+  }
+}
 ```
 
-### 3. Configure
+Or use environment variables (e.g. for Docker):
 
 ```bash
 cp .env.example .env
-# Edit .env with your Soulseek credentials (required)
-# Add Spotify API credentials if you want playlist URL support
+# Edit .env with your credentials
 ```
 
-### 4. Run the API server
+### 3. Run
 
 ```bash
-cd server
-SLDL__BINARYPATH=../bin/sldl SLDL__DOWNLOADPATH=../downloads dotnet run
+dotnet run --project app
 ```
 
-### 5. Run the frontend
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:5223](http://localhost:5223)
 
 ## Quick Start (Docker)
 
@@ -86,24 +90,32 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:5000](http://localhost:5000)
 
 Downloads will be saved to `./downloads/` on your host machine.
 
 ## Configuration
 
-All configuration is via environment variables (or `.env` file):
+### appsettings.json
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SLDL__USERNAME` | Yes | Soulseek username |
-| `SLDL__PASSWORD` | Yes | Soulseek password |
-| `SPOTIFY__CLIENTID` | For Spotify | Spotify API client ID |
-| `SPOTIFY__CLIENTSECRET` | For Spotify | Spotify API client secret |
-| `SLDL__DOWNLOADPATH` | No | Download directory (default: `./downloads`) |
-| `SLDL__PREFERREDFORMAT` | No | Preferred audio format (default: `mp3`) |
-| `SLDL__MINBITRATE` | No | Minimum bitrate (default: `200`) |
-| `NEXT_PUBLIC_API_URL` | No | API URL for frontend (default: `http://localhost:5000`) |
+| Key | Required | Description |
+|-----|----------|-------------|
+| `Sldl:Username` | Yes | Soulseek username |
+| `Sldl:Password` | Yes | Soulseek password |
+| `Sldl:DownloadPath` | No | Download directory (default: `./downloads`) |
+| `Sldl:PreferredFormat` | No | Preferred audio format (default: `mp3`) |
+| `Sldl:MinBitrate` | No | Minimum bitrate (default: `200`) |
+| `Spotify:ClientId` | For Spotify | Spotify API client ID |
+| `Spotify:ClientSecret` | For Spotify | Spotify API client secret |
+
+### Docker environment variables
+
+| Variable | Maps to |
+|----------|---------|
+| `SLSK_USERNAME` | `Sldl:Username` |
+| `SLSK_PASSWORD` | `Sldl:Password` |
+| `SPOTIFY_CLIENT_ID` | `Spotify:ClientId` |
+| `SPOTIFY_CLIENT_SECRET` | `Spotify:ClientSecret` |
 
 ### Getting Spotify API Credentials
 
@@ -115,38 +127,24 @@ All configuration is via environment variables (or `.env` file):
 
 ```
 .
-├── sldl/                  # git submodule: slsk-batchdl
-├── server/                # .NET 8 API server
-│   ├── Program.cs         # API routes (REST + WebSocket)
-│   ├── Models/Job.cs      # Job and track models
-│   └── Services/
-│       ├── JobManager.cs      # Spawns sldl, monitors progress
-│       └── WebSocketManager.cs
-├── web/                   # Next.js frontend
-│   └── src/
-│       ├── app/           # Pages (home, job detail)
-│       ├── components/    # InputForm, JobList, TrackList
-│       └── lib/           # API client, WebSocket hook
+├── sldl/                          # git submodule: slsk-batchdl
+├── app/                           # .NET 8 Blazor Server app
+│   ├── Program.cs                 # App startup, service registration
+│   ├── Components/
+│   │   ├── Layout/MainLayout.razor
+│   │   └── Pages/
+│   │       ├── Home.razor         # Input form + job list
+│   │       └── Job.razor          # Track list with live progress
+│   ├── Hubs/DownloadHub.cs        # SignalR hub
+│   ├── Models/DownloadJob.cs      # Job + track models
+│   ├── Services/
+│   │   ├── DownloadService.cs     # Job management, calls sldl in-process
+│   │   └── SignalRProgressReporter.cs  # IProgressReporter → SignalR
+│   └── wwwroot/app.css            # Dark theme styles
 ├── docker-compose.yml
-├── Dockerfile.api
-├── Dockerfile.web
+├── Dockerfile
 └── .env.example
 ```
-
-## Download Location
-
-When running locally (or via Docker with the volume mount), files download to your machine's filesystem. The default is `./downloads/` organized by date.
-
-For remote deployment (Fly.io, Railway, VPS), files are stored on the server. You can download them via the web UI (individual files or ZIP).
-
-## Future Improvements
-
-- Persistent job storage (SQLite)
-- File browser for downloaded music
-- Quality/format selection per job
-- Fly.io deployment config
-- Progress bars for individual file downloads (requires sldl modifications)
-- Audio preview/player in the UI
 
 ## License
 
