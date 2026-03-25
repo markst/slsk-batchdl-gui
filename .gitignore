@@ -1,8 +1,11 @@
 # Build outputs
 app/bin/
 app/obj/
+app.Tests/bin/
+app.Tests/obj/
 sldl/slsk-batchdl/bin/
 sldl/slsk-batchdl/obj/
+dist/
 
 # Environment
 .env
