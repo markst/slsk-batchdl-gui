@@ -8,6 +8,22 @@
 
 <PageTitle>Job @JobId</PageTitle>
 
+@if (job is not null && playingIndex is not null)
+{
+    <div class="audio-player-bar">
+        <div class="audio-player-inner">
+            <div class="audio-player-info">
+                <span class="audio-player-title">@job.Tracks[playingIndex.Value].Title</span>
+                <span class="audio-player-artist">@job.Tracks[playingIndex.Value].Artist</span>
+            </div>
+            <audio id="audioPlayer" controls autoplay
+                   src="/api/jobs/@job.Id/tracks/@playingIndex/stream"
+                   @onended="OnTrackEnded"></audio>
+            <button class="btn-close-player" @onclick="StopPlayback" title="Close">&times;</button>
+        </div>
+    </div>
+}
+
 <a href="/" class="back-link">&larr; Back</a>
 
 @if (job == null)
@@ -16,20 +32,27 @@
 }
 else
 {
-    <section class="job-detail">
+    <section class="job-detail @(playingIndex is not null ? "has-player" : "")">
         <div class="job-detail-header">
             <div>
                 <h2>
                     <span class="badge-@job.InputType.ToLower()">@job.InputType</span>
                     Job @job.Id
                 </h2>
-                <p class="muted job-input-full">@job.Input</p>
+                <details class="job-input-details">
+                    <summary class="muted">Show input</summary>
+                    <pre class="muted job-input-full">@job.Input</pre>
+                </details>
             </div>
             <div class="job-actions">
                 <span class="job-status status-@job.Status.ToString().ToLower()">@job.Status</span>
                 @if (job.Status == JobStatus.Running)
                 {
                     <button @onclick="Cancel" class="btn-cancel">Cancel</button>
+                }
+                @if (job.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled)
+                {
+                    <button @onclick="Resume" class="btn-resume">Resume</button>
                 }
             </div>
         </div>
@@ -59,8 +82,26 @@ else
             <div class="track-list">
                 @foreach (var (track, idx) in job.Tracks.Select((t, i) => (t, i)))
                 {
-                    <div class="track-row state-@track.State.ToLower()">
-                        <div class="track-index">@(idx + 1)</div>
+                    <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "")">
+                        <div class="track-index">
+                            @if (IsPlayable(track))
+                            {
+                                <button class="btn-play" @onclick="() => Play(idx)" title="Play">
+                                    @if (playingIndex == idx)
+                                    {
+                                        <span>&#9646;&#9646;</span>
+                                    }
+                                    else
+                                    {
+                                        <span>&#9654;</span>
+                                    }
+                                </button>
+                            }
+                            else
+                            {
+                                @(idx + 1)
+                            }
+                        </div>
                         <div class="track-info">
                             <div class="track-title">@track.Title</div>
                             <div class="track-artist">@track.Artist</div>
@@ -87,6 +128,11 @@ else
                                 </div>
                                 <span class="track-percent">@track.Progress.ToString("F0")%</span>
                             }
+                            else if (track.State == "Failed")
+                            {
+                                <span class="state-label">@FormatState(track)</span>
+                                <button class="btn-retry" @onclick="() => RetryTrack(idx)" title="Retry">&#8635;</button>
+                            }
                             else
                             {
                                 <span class="state-label">@FormatState(track)</span>
@@ -95,6 +141,7 @@ else
                     </div>
                 }
             </div>
+
         }
         else if (job.Status == JobStatus.Running)
         {
@@ -102,6 +149,7 @@ else
         }
     </section>
 }
+
 
 @code {
     [Parameter] public string JobId { get; set; } = "";
@@ -177,11 +225,52 @@ else
         job = DownloadService.GetJob(JobId);
     }
 
+    private void Resume()
+    {
+        DownloadService.ResumeJob(JobId);
+        job = DownloadService.GetJob(JobId);
+    }
+
+    private void RetryTrack(int idx)
+    {
+        DownloadService.RetryTrack(JobId, idx);
+    }
+
     private double SuccessPercent() =>
         job != null && job.TotalTracks > 0 ? Math.Round((double)job.DownloadedTracks / job.TotalTracks * 100, 1) : 0;
 
     private double FailPercent() =>
         job != null && job.TotalTracks > 0 ? Math.Round((double)job.FailedTracks / job.TotalTracks * 100, 1) : 0;
+
+    private int? playingIndex;
+
+    private static bool IsPlayable(TrackInfo track) =>
+        (track.State is "Downloaded" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
+
+    private void Play(int idx)
+    {
+        playingIndex = playingIndex == idx ? null : idx;
+    }
+
+    private void StopPlayback()
+    {
+        playingIndex = null;
+    }
+
+    private void OnTrackEnded()
+    {
+        // Auto-advance to next playable track
+        if (job is null || playingIndex is null) return;
+        for (var i = playingIndex.Value + 1; i < job.Tracks.Count; i++)
+        {
+            if (IsPlayable(job.Tracks[i]))
+            {
+                playingIndex = i;
+                return;
+            }
+        }
+        playingIndex = null;
+    }
 
     private static string FormatState(TrackInfo track) => track.State switch
     {

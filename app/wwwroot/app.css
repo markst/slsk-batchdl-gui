@@ -157,8 +157,20 @@ a:hover { text-decoration: underline; }
     gap: 0.5rem;
 }
 
-.job-input-full {
+.job-input-details {
+    margin-top: 0.25rem;
+}
+
+.job-input-details summary {
+    cursor: pointer;
     font-size: 0.85rem;
+    user-select: none;
+}
+
+.job-input-full {
+    font-family: inherit;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
     word-break: break-all;
     max-width: 600px;
     margin-top: 0.25rem;
@@ -182,6 +194,39 @@ a:hover { text-decoration: underline; }
     transition: border-color 0.2s;
 }
 .btn-cancel:hover { border-color: #f87171; color: #f87171; }
+
+.btn-resume {
+    background: transparent;
+    border: 1px solid #555;
+    color: #e0e0e0;
+    border-radius: 6px;
+    padding: 0.35rem 1rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+.btn-resume:hover { border-color: #6ee7b7; color: #6ee7b7; }
+
+.btn-retry {
+    background: transparent;
+    border: 1px solid #555;
+    color: #888;
+    border-radius: 50%;
+    width: 1.4rem;
+    height: 1.4rem;
+    min-width: 1.4rem;
+    min-height: 1.4rem;
+    aspect-ratio: 1;
+    padding: 0;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.2s, color 0.2s;
+}
+.btn-retry:hover { border-color: #fbbf24; color: #fbbf24; }
 
 .error-banner {
     background: #2a1515;
@@ -228,6 +273,7 @@ a:hover { text-decoration: underline; }
 .track-list {
     display: flex;
     flex-direction: column;
+    gap: 0.25rem;
 }
 
 .track-row {
@@ -244,9 +290,12 @@ a:hover { text-decoration: underline; }
 
 .track-index {
     color: #555;
-    text-align: right;
+    text-align: center;
     font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .track-title { font-weight: 500; }
@@ -306,6 +355,182 @@ a:hover { text-decoration: underline; }
 .state-failed .state-label { color: #f87171; }
 .state-found .state-label { color: #93c5fd; }
 .state-searching .state-label { color: #93c5fd; }
+
+/* ===== Play Button ===== */
+.btn-play {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    border-radius: 50%;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.65rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    flex-shrink: 0;
+    aspect-ratio: 1;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.btn-play:hover { color: #6ee7b7; background: #333; border-color: #6ee7b7; }
+.track-row:hover .btn-play { color: #ccc; }
+.track-row:hover .btn-play:hover { color: #6ee7b7; border-color: #6ee7b7; }
+.track-playing { background: #1a2a1a !important; }
+.track-playing .btn-play { color: #6ee7b7; border-color: #6ee7b7; }
+
+/* ===== Settings Page ===== */
+.settings-page { max-width: 500px; }
+.settings-page h2 { margin-bottom: 1.5rem; }
+
+.settings-group {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+}
+.settings-group h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: #ccc;
+}
+
+.settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+}
+.settings-field:last-child { margin-bottom: 0; }
+
+.settings-field label {
+    font-size: 0.75rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.settings-field input,
+.settings-field select {
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+.settings-field input:focus,
+.settings-field select:focus {
+    outline: none;
+    border-color: #6ee7b7;
+}
+
+.settings-field select {
+    appearance: none;
+    cursor: pointer;
+}
+
+.btn-save {
+    background: #6ee7b7;
+    color: #0d0d0d;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.btn-save:hover { opacity: 0.85; }
+
+.settings-saved {
+    background: #1a2a1a;
+    border: 1px solid #2a4a2a;
+    color: #6ee7b7;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+/* ===== Audio Player Bar ===== */
+.has-player { padding-bottom: 5rem; }
+
+.audio-player-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+    z-index: 1000;
+}
+
+.audio-player-inner {
+    width: 100%;
+    padding: 0.6rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.audio-player-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex-shrink: 0;
+    max-width: 200px;
+}
+.audio-player-title {
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.audio-player-artist {
+    font-size: 0.75rem;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.audio-player-bar audio {
+    flex: 1;
+    height: 36px;
+    min-width: 0;
+}
+
+.btn-close-player {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    border-radius: 50%;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #888;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    flex-shrink: 0;
+    aspect-ratio: 1;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.btn-close-player:hover { color: #f87171; background: #333; border-color: #f87171; }
 
 /* ===== Blazor Error ===== */
 .blazor-error-boundary {
