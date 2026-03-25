@@ -7,6 +7,19 @@
 .app-header {
     padding: 1rem 2rem;
     border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.header-link {
+    color: #888;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+}
+.header-link:hover {
+    color: #e0e0e0;
 }
 
 .logo {

@@ -1,0 +1,83 @@
+@page "/settings"
+@using SldlWeb.Models
+@using SldlWeb.Services
+@inject SettingsService SettingsService
+@rendermode InteractiveServer
+
+<PageTitle>Settings</PageTitle>
+
+<a href="/" class="back-link">&larr; Back</a>
+
+<section class="settings-page">
+    <h2>Settings</h2>
+
+    @if (saved)
+    {
+        <div class="settings-saved">Settings saved.</div>
+    }
+
+    <div class="settings-group">
+        <h3>Soulseek</h3>
+        <div class="settings-field">
+            <label for="slsk-user">Username</label>
+            <input id="slsk-user" type="text" @bind="model.SoulseekUsername" placeholder="Soulseek username" />
+        </div>
+        <div class="settings-field">
+            <label for="slsk-pass">Password</label>
+            <input id="slsk-pass" type="password" @bind="model.SoulseekPassword" placeholder="Soulseek password" />
+        </div>
+    </div>
+
+    <div class="settings-group">
+        <h3>Spotify <span class="muted">(optional)</span></h3>
+        <div class="settings-field">
+            <label for="spotify-id">Client ID</label>
+            <input id="spotify-id" type="text" @bind="model.SpotifyClientId" placeholder="Spotify Client ID" />
+        </div>
+        <div class="settings-field">
+            <label for="spotify-secret">Client Secret</label>
+            <input id="spotify-secret" type="password" @bind="model.SpotifyClientSecret" placeholder="Spotify Client Secret" />
+        </div>
+    </div>
+
+    <div class="settings-group">
+        <h3>Downloads</h3>
+        <div class="settings-field">
+            <label for="dl-path">Download Path</label>
+            <input id="dl-path" type="text" @bind="model.DownloadPath" placeholder="./downloads" />
+        </div>
+        <div class="settings-field">
+            <label for="pref-format">Preferred Format</label>
+            <select id="pref-format" @bind="model.PreferredFormat">
+                <option value="mp3">mp3</option>
+                <option value="flac">flac</option>
+                <option value="ogg">ogg</option>
+                <option value="m4a">m4a</option>
+                <option value="opus">opus</option>
+                <option value="wav">wav</option>
+            </select>
+        </div>
+        <div class="settings-field">
+            <label for="min-bitrate">Min Bitrate (kbps)</label>
+            <input id="min-bitrate" type="number" @bind="model.MinBitrate" placeholder="200" />
+        </div>
+    </div>
+
+    <button class="btn-save" @onclick="Save">Save</button>
+</section>
+
+@code {
+    private AppSettings model = new();
+    private bool saved;
+
+    protected override void OnInitialized()
+    {
+        model = SettingsService.Get();
+    }
+
+    private void Save()
+    {
+        SettingsService.Update(model);
+        saved = true;
+    }
+}
