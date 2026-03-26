@@ -3,6 +3,7 @@
 @using SldlWeb.Services
 @inject DownloadService DownloadService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>sldl web</PageTitle>
@@ -17,10 +18,34 @@
                   rows="4"
                   class="input-textarea"></textarea>
         <div class="form-bottom-row">
-            <label class="option-checkbox">
-                <input type="checkbox" @bind="albumMode" />
-                <span>Album mode</span>
-            </label>
+            <div class="form-options">
+                <label class="toggle-label">
+                    <input type="checkbox" @bind="albumMode" />
+                    <span>Album</span>
+                </label>
+                @if (profiles.Count > 0)
+                {
+                    <div class="form-options-divider"></div>
+                    <div class="profile-dropdown @(profileOpen ? "open" : "")">
+                        <button type="button" class="profile-trigger" @onclick="ToggleProfile">
+                            <span class="profile-label-text">Profile</span>
+                            <span class="profile-value">@(string.IsNullOrEmpty(selectedProfile) ? "—" : selectedProfile)</span>
+                        </button>
+                        @if (profileOpen)
+                        {
+                            <div class="profile-menu">
+                                <div class="profile-option @(string.IsNullOrEmpty(selectedProfile) ? "selected" : "")"
+                                     @onclick='() => SelectProfile("")'>—</div>
+                                @foreach (var p in profiles)
+                                {
+                                    <div class="profile-option @(selectedProfile == p ? "selected" : "")"
+                                         @onclick="() => SelectProfile(p)">@p</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
             <button @onclick="Submit" class="btn-submit">
                 <span>Download</span>
             </button>
@@ -63,7 +88,11 @@
 @code {
     private string inputText = "";
     private bool albumMode;
+    private string selectedProfile = "";
+    private bool profileOpen = false;
     private bool isSubmitting;
+    private DotNetObjectReference<Home>? _selfRef;
+    private IReadOnlyList<string> profiles = [];
     private List<DownloadJob> jobs = new();
     private System.Threading.Timer? refreshTimer;
 
@@ -71,6 +100,7 @@
     {
         if (firstRender)
         {
+            profiles = DownloadService.GetAvailableProfiles();
             RefreshJobs();
             refreshTimer = new System.Threading.Timer(_ =>
             {
@@ -91,14 +121,37 @@
 
     private async Task Submit()
     {
-        if (string.IsNullOrWhiteSpace(inputText)) return;
+        if (string.IsNullOrWhiteSpace(inputText) && string.IsNullOrEmpty(selectedProfile)) return;
         isSubmitting = true;
 
-        var job = DownloadService.CreateJob(inputText, albumMode);
+        var job = DownloadService.CreateJob(inputText, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile);
         inputText = "";
         isSubmitting = false;
 
         Nav.NavigateTo($"/job/{job.Id}");
+    }
+
+    private async Task ToggleProfile()
+    {
+        profileOpen = !profileOpen;
+        if (profileOpen)
+        {
+            _selfRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("onClickOutside", _selfRef, ".profile-dropdown");
+        }
+    }
+
+    [JSInvokable]
+    public void CloseDropdown()
+    {
+        profileOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectProfile(string p)
+    {
+        selectedProfile = p;
+        profileOpen = false;
     }
 
     private void NavigateToJob(string id) => Nav.NavigateTo($"/job/{id}");
@@ -112,5 +165,6 @@
     public void Dispose()
     {
         refreshTimer?.Dispose();
+        _selfRef?.Dispose();
     }
 }
