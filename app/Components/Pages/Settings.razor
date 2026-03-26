@@ -63,6 +63,45 @@
         </div>
     </div>
 
+    <div class="settings-group">
+        <h3>Default Extra Arguments <span class="muted">(applied to every download)</span></h3>
+        @if (model.DefaultExtraArgs.Any())
+        {
+            <div class="extra-args-list settings-extra-args-list">
+                @for (int i = 0; i < model.DefaultExtraArgs.Count; i++)
+                {
+                    var idx = i;
+                    var arg = model.DefaultExtraArgs[idx];
+                    <div class="extra-arg-row">
+                        <span class="extra-arg-flag">@arg.Flag</span>
+                        @if (!string.IsNullOrEmpty(arg.Value))
+                        {
+                            <span class="extra-arg-value">@arg.Value</span>
+                        }
+                        <button class="btn-remove-arg" @onclick="() => RemoveDefaultArg(idx)" title="Remove">×</button>
+                    </div>
+                }
+            </div>
+        }
+        <div class="extra-args-add-row">
+            <select class="extra-args-select" @bind="selectedArgFlag">
+                <option value="">— pick argument —</option>
+                @foreach (var known in KnownArg.All)
+                {
+                    <option value="@known.Flag">@known.Label (@known.Flag)</option>
+                }
+            </select>
+            @if (SelectedKnown is { Type: not "flag" })
+            {
+                <input class="extra-args-value-input"
+                       type="@(SelectedKnown.Type == "number" ? "number" : "text")"
+                       placeholder="@SelectedKnown.Placeholder"
+                       @bind="pendingArgValue" />
+            }
+            <button class="btn-add-arg" @onclick="AddDefaultArg" disabled="@string.IsNullOrEmpty(selectedArgFlag)">+</button>
+        </div>
+    </div>
+
     <button class="btn-save" @onclick="Save">Save</button>
 </section>
 
@@ -70,9 +109,37 @@
     private AppSettings model = new();
     private bool saved;
 
+    private string selectedArgFlag = "";
+    private string pendingArgValue = "";
+
+    private KnownArg? SelectedKnown =>
+        KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
+
     protected override void OnInitialized()
     {
         model = SettingsService.Get();
+    }
+
+    private void AddDefaultArg()
+    {
+        if (string.IsNullOrEmpty(selectedArgFlag)) return;
+        var known = SelectedKnown;
+        if (known is null) return;
+
+        model.DefaultExtraArgs.Add(new ExtraArg
+        {
+            Flag = selectedArgFlag,
+            Value = known.Type == "flag" ? "" : pendingArgValue.Trim()
+        });
+
+        selectedArgFlag = "";
+        pendingArgValue = "";
+    }
+
+    private void RemoveDefaultArg(int index)
+    {
+        if (index >= 0 && index < model.DefaultExtraArgs.Count)
+            model.DefaultExtraArgs.RemoveAt(index);
     }
 
     private void Save()

@@ -16,6 +16,48 @@
                   placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
                   rows="4"
                   class="input-textarea"></textarea>
+
+        <details class="extra-args-section">
+            <summary class="extra-args-toggle">Extra Arguments</summary>
+            <div class="extra-args-body">
+                @if (extraArgs.Any())
+                {
+                    <div class="extra-args-list">
+                        @for (int i = 0; i < extraArgs.Count; i++)
+                        {
+                            var idx = i;
+                            var arg = extraArgs[idx];
+                            <div class="extra-arg-row">
+                                <span class="extra-arg-flag">@arg.Flag</span>
+                                @if (!string.IsNullOrEmpty(arg.Value))
+                                {
+                                    <span class="extra-arg-value">@arg.Value</span>
+                                }
+                                <button class="btn-remove-arg" @onclick="() => RemoveArg(idx)" title="Remove">×</button>
+                            </div>
+                        }
+                    </div>
+                }
+                <div class="extra-args-add-row">
+                    <select class="extra-args-select" @bind="selectedArgFlag">
+                        <option value="">— pick argument —</option>
+                        @foreach (var known in KnownArg.All)
+                        {
+                            <option value="@known.Flag">@known.Label (@known.Flag)</option>
+                        }
+                    </select>
+                    @if (SelectedKnown is { Type: not "flag" })
+                    {
+                        <input class="extra-args-value-input"
+                               type="@(SelectedKnown.Type == "number" ? "number" : "text")"
+                               placeholder="@SelectedKnown.Placeholder"
+                               @bind="pendingArgValue" />
+                    }
+                    <button class="btn-add-arg" @onclick="AddArg" disabled="@string.IsNullOrEmpty(selectedArgFlag)">+</button>
+                </div>
+            </div>
+        </details>
+
         <button @onclick="Submit" class="btn-submit">
             <span>Download</span>
         </button>
@@ -60,6 +102,14 @@
     private List<DownloadJob> jobs = new();
     private System.Threading.Timer? refreshTimer;
 
+    // Extra args state
+    private List<ExtraArg> extraArgs = new();
+    private string selectedArgFlag = "";
+    private string pendingArgValue = "";
+
+    private KnownArg? SelectedKnown =>
+        KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
+
     protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender)
@@ -82,13 +132,42 @@
         jobs = DownloadService.GetAllJobs().ToList();
     }
 
+    private void AddArg()
+    {
+        if (string.IsNullOrEmpty(selectedArgFlag)) return;
+        var known = SelectedKnown;
+        if (known is null) return;
+
+        extraArgs.Add(new ExtraArg
+        {
+            Flag = selectedArgFlag,
+            Value = known.Type == "flag" ? "" : pendingArgValue.Trim()
+        });
+
+        ResetArgInputState();
+    }
+
+    private void RemoveArg(int index)
+    {
+        if (index >= 0 && index < extraArgs.Count)
+            extraArgs.RemoveAt(index);
+    }
+
+    private void ResetArgInputState()
+    {
+        selectedArgFlag = "";
+        pendingArgValue = "";
+    }
+
     private async Task Submit()
     {
         if (string.IsNullOrWhiteSpace(inputText)) return;
         isSubmitting = true;
 
-        var job = DownloadService.CreateJob(inputText);
+        var job = DownloadService.CreateJob(inputText, extraArgs);
         inputText = "";
+        extraArgs = new();
+        ResetArgInputState();
         isSubmitting = false;
 
         Nav.NavigateTo($"/job/{job.Id}");

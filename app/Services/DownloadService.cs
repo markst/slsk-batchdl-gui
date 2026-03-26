@@ -25,13 +25,20 @@ public class DownloadService
             _jobs.TryAdd(job.Id, job);
     }
 
-    public DownloadJob CreateJob(string input)
+    public DownloadJob CreateJob(string input, List<ExtraArg>? extraArgs = null)
     {
+        var s = _settings.Get();
+        // Merge defaults with per-job args; per-job args take precedence (last wins for duplicates).
+        var merged = (s.DefaultExtraArgs ?? new()).Concat(extraArgs ?? new())
+            .GroupBy(a => a.Flag)
+            .Select(g => g.Last())
+            .ToList();
         var job = new DownloadJob
         {
             Input = input.Trim(),
             InputType = InputTypeDetector.Detect(input),
             DownloadPath = GetDownloadPath(),
+            ExtraArgs = merged,
         };
         _jobs.TryAdd(job.Id, job);
         _ = Task.Run(() => ProcessJobAsync(job));
@@ -295,6 +302,14 @@ public class DownloadService
         args.Add("--no-listen");
         args.Add("--write-index");
         args.Add("--nc");
+
+        foreach (var extra in job.ExtraArgs)
+        {
+            if (string.IsNullOrWhiteSpace(extra.Flag)) continue;
+            args.Add(extra.Flag);
+            if (!string.IsNullOrWhiteSpace(extra.Value))
+                args.Add(extra.Value);
+        }
 
         return args;
     }

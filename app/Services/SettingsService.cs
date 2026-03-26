@@ -48,6 +48,7 @@ public class SettingsService
                 MinBitrate = _settings.MinBitrate,
                 SpotifyClientId = _settings.SpotifyClientId,
                 SpotifyClientSecret = _settings.SpotifyClientSecret,
+                DefaultExtraArgs = _settings.DefaultExtraArgs.Select(a => new ExtraArg { Flag = a.Flag, Value = a.Value }).ToList(),
             };
         }
     }

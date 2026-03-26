@@ -9,4 +9,5 @@ public class AppSettings
     public string MinBitrate { get; set; } = "200";
     public string SpotifyClientId { get; set; } = "";
     public string SpotifyClientSecret { get; set; } = "";
+    public List<ExtraArg> DefaultExtraArgs { get; set; } = new();
 }
