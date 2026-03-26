@@ -307,6 +307,99 @@ a:hover { text-decoration: underline; }
 .state-found .state-label { color: #93c5fd; }
 .state-searching .state-label { color: #93c5fd; }
 
+/* ===== Album Groups ===== */
+.album-group {
+    margin-bottom: 1.25rem;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.album-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0.75rem;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.album-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.album-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-artist {
+    font-size: 0.78rem;
+    color: #888;
+}
+
+.album-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.album-stats {
+    font-size: 0.78rem;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+}
+
+.album-progress-bar {
+    width: 60px;
+    height: 3px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.album-progress-fill {
+    height: 100%;
+    background: #6ee7b7;
+    transition: width 0.3s;
+}
+
+.album-group .track-row:last-child {
+    border-bottom: none;
+}
+
+/* ===== Form bottom row ===== */
+.form-bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.option-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: #aaa;
+    cursor: pointer;
+    user-select: none;
+}
+
+.option-checkbox input[type="checkbox"] {
+    accent-color: #6ee7b7;
+    cursor: pointer;
+    width: 14px;
+    height: 14px;
+}
+
 /* ===== Blazor Error ===== */
 .blazor-error-boundary {
     background: #b32121;

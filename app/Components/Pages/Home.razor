@@ -16,9 +16,15 @@
                   placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
                   rows="4"
                   class="input-textarea"></textarea>
-        <button @onclick="Submit" class="btn-submit">
-            <span>Download</span>
-        </button>
+        <div class="form-bottom-row">
+            <label class="option-checkbox">
+                <input type="checkbox" @bind="albumMode" />
+                <span>Album mode</span>
+            </label>
+            <button @onclick="Submit" class="btn-submit">
+                <span>Download</span>
+            </button>
+        </div>
     </div>
 </section>
 
@@ -56,6 +62,7 @@
 
 @code {
     private string inputText = "";
+    private bool albumMode;
     private bool isSubmitting;
     private List<DownloadJob> jobs = new();
     private System.Threading.Timer? refreshTimer;
@@ -87,7 +94,7 @@
         if (string.IsNullOrWhiteSpace(inputText)) return;
         isSubmitting = true;
 
-        var job = DownloadService.CreateJob(inputText);
+        var job = DownloadService.CreateJob(inputText, albumMode);
         inputText = "";
         isSubmitting = false;
 

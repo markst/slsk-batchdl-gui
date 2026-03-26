@@ -19,6 +19,7 @@ public class DownloadJob
     public DateTime? CompletedAt { get; set; }
     public string? Error { get; set; }
     public string DownloadPath { get; set; } = "";
+    public bool AlbumMode { get; set; }
     public List<TrackInfo> Tracks { get; set; } = new();
     public CancellationTokenSource Cts { get; set; } = new();
 
