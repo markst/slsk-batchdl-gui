@@ -66,13 +66,6 @@ Edit `app/appsettings.json` with your credentials:
 }
 ```
 
-Or use environment variables (e.g. for Docker):
-
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-```
-
 ### 3. Run
 
 ```bash
@@ -80,19 +73,6 @@ dotnet run --project app
 ```
 
 Open [http://localhost:5223](http://localhost:5223)
-
-## Quick Start (Docker)
-
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-
-docker compose up --build
-```
-
-Open [http://localhost:5000](http://localhost:5000)
-
-Downloads will be saved to `./downloads/` on your host machine.
 
 ## Configuration
 
@@ -107,15 +87,6 @@ Downloads will be saved to `./downloads/` on your host machine.
 | `Sldl:MinBitrate` | No | Minimum bitrate (default: `200`) |
 | `Spotify:ClientId` | For Spotify | Spotify API client ID |
 | `Spotify:ClientSecret` | For Spotify | Spotify API client secret |
-
-### Docker environment variables
-
-| Variable | Maps to |
-|----------|---------|
-| `SLSK_USERNAME` | `Sldl:Username` |
-| `SLSK_PASSWORD` | `Sldl:Password` |
-| `SPOTIFY_CLIENT_ID` | `Spotify:ClientId` |
-| `SPOTIFY_CLIENT_SECRET` | `Spotify:ClientSecret` |
 
 ### Getting Spotify API Credentials
 
@@ -141,8 +112,6 @@ Downloads will be saved to `./downloads/` on your host machine.
 │   │   ├── DownloadService.cs     # Job management, calls sldl in-process
 │   │   └── SignalRProgressReporter.cs  # IProgressReporter → SignalR
 │   └── wwwroot/app.css            # Dark theme styles
-├── docker-compose.yml
-├── Dockerfile
 └── .env.example
 ```
 
