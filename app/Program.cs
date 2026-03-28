@@ -11,6 +11,7 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
+builder.Services.AddSingleton<BpmService>();
 
 var app = builder.Build();
 
@@ -54,6 +55,33 @@ app.MapGet("/api/jobs/{jobId}/tracks/{trackIndex:int}/stream", (string jobId, in
     };
 
     return Results.File(resolvedPath, contentType, enableRangeProcessing: true);
+});
+
+app.MapPost("/api/jobs/{jobId}/tracks/{trackIndex:int}/analyze-bpm",
+    async (string jobId, int trackIndex, DownloadService svc, BpmService bpmSvc, CancellationToken ct) =>
+{
+    var job = svc.GetJob(jobId);
+    if (job is null || trackIndex < 0 || trackIndex >= job.Tracks.Count)
+        return Results.NotFound();
+
+    var track = job.Tracks[trackIndex];
+    if (string.IsNullOrEmpty(track.DownloadPath) || !System.IO.File.Exists(track.DownloadPath))
+        return Results.BadRequest(new { error = "Track file not available." });
+
+    // Ensure the file is within the job's download directory (prevent path traversal)
+    var resolvedPath = Path.GetFullPath(track.DownloadPath);
+    var jobDir = Path.GetFullPath(job.DownloadPath);
+    if (!resolvedPath.StartsWith(jobDir, StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound();
+
+    track.BpmState = "Analyzing";
+
+    var bpm = await bpmSvc.AnalyzeAsync(resolvedPath, ct);
+
+    track.Bpm = bpm;
+    track.BpmState = bpm.HasValue ? "Done" : "Failed";
+
+    return Results.Ok(new { bpm = track.Bpm, state = track.BpmState });
 });
 
 app.MapRazorComponents<App>()

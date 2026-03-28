@@ -3,6 +3,7 @@
 @using SldlWeb.Models
 @using SldlWeb.Services
 @inject DownloadService DownloadService
+@inject BpmService BpmService
 @inject NavigationManager Nav
 @implements IAsyncDisposable
 
@@ -119,6 +120,25 @@ else
                             {
                                 <span class="track-bitrate">@(track.BitRate)kbps</span>
                             }
+                            @if (track.BpmState == "Done" && track.Bpm.HasValue)
+                            {
+                                <span class="track-bpm-badge">@track.Bpm.Value.ToString("F0") BPM</span>
+                            }
+                            @if (IsPlayable(track))
+                            {
+                                @if (track.BpmState == "Analyzing")
+                                {
+                                    <span class="track-bpm-analyzing">BPM…</span>
+                                }
+                                else if (track.BpmState == "Failed")
+                                {
+                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Retry BPM analysis">? BPM</button>
+                                }
+                                else if (track.BpmState != "Done")
+                                {
+                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyse BPM">&#9835; BPM</button>
+                                }
+                            }
                         </div>
                         <div class="track-state">
                             @if (track.State == "Downloading" && track.TotalBytes > 0)
@@ -234,6 +254,27 @@ else
     private void RetryTrack(int idx)
     {
         DownloadService.RetryTrack(JobId, idx);
+    }
+
+    private async Task AnalyzeBpm(int idx)
+    {
+        if (job is null || idx < 0 || idx >= job.Tracks.Count) return;
+        var track = job.Tracks[idx];
+        if (string.IsNullOrEmpty(track.DownloadPath) || !System.IO.File.Exists(track.DownloadPath)) return;
+        if (track.BpmState == "Analyzing") return;
+
+        // Ensure the file is within the job's download directory
+        var resolvedPath = Path.GetFullPath(track.DownloadPath);
+        var jobDir = Path.GetFullPath(job.DownloadPath);
+        if (!resolvedPath.StartsWith(jobDir, StringComparison.OrdinalIgnoreCase)) return;
+
+        track.BpmState = "Analyzing";
+        StateHasChanged();
+
+        var bpm = await BpmService.AnalyzeAsync(resolvedPath);
+        track.Bpm = bpm;
+        track.BpmState = bpm.HasValue ? "Done" : "Failed";
+        StateHasChanged();
     }
 
     private double SuccessPercent() =>

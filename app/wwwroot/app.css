@@ -676,6 +676,41 @@ details[open] > .extra-args-toggle::before { transform: rotate(90deg); }
 .btn-add-arg:hover:not(:disabled) { background: #5dd4a8; }
 .btn-add-arg:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ===== BPM Button & Badge ===== */
+.btn-bpm {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    border-radius: 4px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-bpm:hover { border-color: #a78bfa; color: #a78bfa; }
+
+.track-bpm-badge {
+    background: #2d1f4e;
+    color: #a78bfa;
+    border: 1px solid #4c3587;
+    border-radius: 4px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.track-bpm-analyzing {
+    color: #666;
+    font-size: 0.7rem;
+    font-style: italic;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 /* ===== Blazor Error ===== */
 .blazor-error-boundary {
     background: #b32121;

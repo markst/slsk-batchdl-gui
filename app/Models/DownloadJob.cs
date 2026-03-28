@@ -87,4 +87,6 @@ public class TrackInfo
     public string? Filename { get; set; }
     public int? BitRate { get; set; }
     public string? Extension { get; set; }
+    public float? Bpm { get; set; }
+    public string BpmState { get; set; } = "None"; // None | Analyzing | Done | Failed
 }
