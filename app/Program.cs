@@ -1,3 +1,5 @@
+using ElectronNET.API;
+using ElectronNET.API.Entities;
 using SldlWeb.Components;
 using SldlWeb.Hubs;
 using SldlWeb.Services;
@@ -5,6 +7,8 @@ using SldlWeb.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
+builder.WebHost.UseElectron(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -86,7 +90,27 @@ app.MapPost("/api/jobs/{jobId}/tracks/{trackIndex:int}/analyze-bpm",
     return Results.Ok(new { bpm = track.Bpm, state = track.BpmState });
 });
 
-app.MapRazorComponents<App>()
+app.MapRazorComponents<SldlWeb.Components.App>()
     .AddInteractiveServerRenderMode();
 
-app.Run();
+await app.StartAsync();
+
+if (HybridSupport.IsElectronActive)
+{
+    var window = await Electron.WindowManager.CreateWindowAsync(new BrowserWindowOptions
+    {
+        Width = 1200,
+        Height = 800,
+        Title = "sldl-web",
+        WebPreferences = new WebPreferences
+        {
+            NodeIntegration = false,
+            ContextIsolation = true
+        }
+    });
+
+    window.OnClosed += () => Electron.App.Quit();
+}
+
+await app.WaitForShutdownAsync();
+

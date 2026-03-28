@@ -1,0 +1,62 @@
+{
+  "executable": "SldlWeb",
+  "splashscreen": {
+    "imageFile": ""
+  },
+  "name": "sldl-web",
+  "author": "",
+  "singleInstance": true,
+  "environment": "Production",
+  "browserWindow": {
+    "width": 1200,
+    "height": 800,
+    "minWidth": 800,
+    "minHeight": 600,
+    "title": "sldl-web",
+    "webPreferences": {
+      "nodeIntegration": false,
+      "contextIsolation": true
+    }
+  },
+  "loadingWindow": {
+    "width": 300,
+    "height": 300,
+    "isAlwaysOnTop": true
+  },
+  "forge": {
+    "electronPackagerConfig": {
+      "name": "sldl-web"
+    },
+    "electronWinstallerConfig": {
+      "name": "sldl-web"
+    },
+    "electronDebuilderConfig": {
+      "name": "sldl-web"
+    },
+    "electronInstallerDMG": {
+      "name": "sldl-web"
+    },
+    "makers": [
+      {
+        "name": "@electron-forge/maker-squirrel",
+        "platforms": [
+          "win32"
+        ]
+      },
+      {
+        "name": "@electron-forge/maker-dmg",
+        "platforms": [
+          "darwin"
+        ]
+      },
+      {
+        "name": "@electron-forge/maker-zip",
+        "platforms": [
+          "linux",
+          "darwin",
+          "win32"
+        ]
+      }
+    ]
+  }
+}

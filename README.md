@@ -9,6 +9,7 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 - Track-by-track status with progress bars
 - Dark theme UI
 - Single .NET process — no separate frontend server
+- **Cross-platform desktop app** via [Electron.NET](https://github.com/ElectronNET/Electron.NET) — runs on macOS, Windows, and Linux
 
 ## Architecture
 
@@ -30,12 +31,16 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 - **sldl** is included as a git submodule and referenced as a project dependency
 - The Blazor Server app calls sldl's `DownloaderApplication` directly in-process
 - A `SignalRProgressReporter` implements sldl's `IProgressReporter` interface to push real-time updates to the browser
+- **Electron.NET** wraps the Blazor Server app in an Electron window for a native desktop experience
 
-## Quick Start (Local)
+## Quick Start (Desktop App)
 
-### Prerequisites
+Pre-built binaries for macOS and Windows are available on the [Releases](../../releases) page. Download the appropriate file for your platform and run it — no installation required.
+
+### Prerequisites (building from source)
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [Node.js 20+](https://nodejs.org/)
 - A Soulseek account (create one at https://www.slsknet.org/)
 - (Optional) Spotify API credentials for playlist URL support
 
@@ -43,10 +48,16 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 
 ```bash
 git clone --recurse-submodules <repo-url>
-cd slsk-batch-downloader
+cd slsk-batchdl-gui
 ```
 
-### 2. Configure
+### 2. Install the Electron.NET CLI
+
+```bash
+dotnet tool install ElectronNET.CLI -g
+```
+
+### 3. Configure
 
 Edit `app/appsettings.json` with your credentials:
 
@@ -66,7 +77,38 @@ Edit `app/appsettings.json` with your credentials:
 }
 ```
 
-### 3. Run
+### 4. Run as a desktop app
+
+```bash
+cd app
+electronize start
+```
+
+This launches a native desktop window running the Blazor UI.
+
+### Build a distributable package
+
+```bash
+# Windows (.exe installer)
+electronize build /target win
+
+# macOS (.dmg)
+electronize build /target osx
+
+# macOS Apple Silicon
+electronize build /target osx /electron-arch arm64
+```
+
+Built packages are written to `app/bin/Desktop/`.
+
+## Quick Start (Local — web only)
+
+### Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- A Soulseek account (create one at https://www.slsknet.org/)
+
+### Run
 
 ```bash
 dotnet run --project app
@@ -100,7 +142,8 @@ Open [http://localhost:5223](http://localhost:5223)
 .
 ├── sldl/                          # git submodule: slsk-batchdl
 ├── app/                           # .NET 8 Blazor Server app
-│   ├── Program.cs                 # App startup, service registration
+│   ├── Program.cs                 # App startup, service registration, Electron.NET
+│   ├── electron.manifest.json     # Electron app configuration
 │   ├── Components/
 │   │   ├── Layout/MainLayout.razor
 │   │   └── Pages/
@@ -112,9 +155,12 @@ Open [http://localhost:5223](http://localhost:5223)
 │   │   ├── DownloadService.cs     # Job management, calls sldl in-process
 │   │   └── SignalRProgressReporter.cs  # IProgressReporter → SignalR
 │   └── wwwroot/app.css            # Dark theme styles
+├── .github/workflows/
+│   └── build-desktop.yml          # CI: build Electron packages for Windows & macOS
 └── .env.example
 ```
 
 ## License
 
 This project wraps [slsk-batchdl](https://github.com/fiso64/slsk-batchdl) which is GPL-3.0 licensed.
+
