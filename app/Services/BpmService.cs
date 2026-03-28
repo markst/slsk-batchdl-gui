@@ -19,6 +19,9 @@ public class BpmService
     private const int HistorySize = 43;             // ~2 seconds of history windows
     private const double MinBpm = 60.0;
     private const double MaxBpm = 200.0;
+    private const int MaxAnalysisSeconds = 90;      // Cap analysis to first 90s for speed
+    private const double MinBeatGapSeconds = 0.2;  // Prevents double-detects; caps at 300 BPM
+    private const int HistogramBinMs = 5;           // IOI histogram resolution in ms
 
     public BpmService(ILogger<BpmService> logger)
     {
@@ -94,7 +97,7 @@ public class BpmService
         // Decimation factor: keep every Nth sample to reach ~AnalysisSampleRate
         int decimation = Math.Max(1, nativeSampleRate / AnalysisSampleRate);
 
-        var result = new List<float>(AnalysisSampleRate * 300);
+        var result = new List<float>(AnalysisSampleRate * MaxAnalysisSeconds);
         var buffer = new float[nativeSampleRate]; // 1 s of native-rate mono samples
         int skipCounter = 0;
         int read;
@@ -110,8 +113,8 @@ public class BpmService
                 skipCounter = (skipCounter + 1) % decimation;
             }
 
-            // Limit analysis to the first 90 seconds for speed
-            if (result.Count >= AnalysisSampleRate * 90)
+            // Limit analysis to the first MaxAnalysisSeconds for speed
+            if (result.Count >= AnalysisSampleRate * MaxAnalysisSeconds)
                 break;
         }
         return result;
@@ -149,16 +152,15 @@ public class BpmService
             if (energy[w] > BeatSensitivity * avg)
             {
                 double timeSeconds = w * WindowMs / 1000.0;
-                // Enforce minimum beat gap of ~200ms (300 BPM max)
-                if (onsetTimes.Count == 0 || timeSeconds - onsetTimes[^1] >= 0.2)
+                // Enforce minimum beat gap to prevent double-detects (MinBeatGapSeconds = 0.2 → max 300 BPM)
+                if (onsetTimes.Count == 0 || timeSeconds - onsetTimes[^1] >= MinBeatGapSeconds)
                     onsetTimes.Add(timeSeconds);
             }
         }
 
         if (onsetTimes.Count < 2) return null;
 
-        // Build inter-onset interval (IOI) histogram, quantised to 5ms bins
-        const int BinMs = 5;
+        // Build inter-onset interval (IOI) histogram, quantised to HistogramBinMs bins
         var histogram = new Dictionary<int, int>();
         for (int i = 1; i < onsetTimes.Count; i++)
         {
@@ -172,7 +174,7 @@ public class BpmService
             if (bpm < MinBpm || bpm > MaxBpm) continue;
 
             // Convert back to interval in ms and round to bin
-            int bin = (int)Math.Round(60000.0 / bpm / BinMs) * BinMs;
+            int bin = (int)Math.Round(60000.0 / bpm / HistogramBinMs) * HistogramBinMs;
             histogram.TryGetValue(bin, out int count);
             histogram[bin] = count + 1;
         }

@@ -136,7 +136,7 @@ else
                                 }
                                 else if (track.BpmState != "Done")
                                 {
-                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyse BPM">&#9835; BPM</button>
+                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyze BPM">&#9835; BPM</button>
                                 }
                             }
                         </div>
@@ -177,6 +177,7 @@ else
     private DownloadJob? job;
     private HubConnection? hubConnection;
     private System.Threading.Timer? refreshTimer;
+    private CancellationTokenSource? _bpmCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -271,7 +272,10 @@ else
         track.BpmState = "Analyzing";
         StateHasChanged();
 
-        var bpm = await BpmService.AnalyzeAsync(resolvedPath);
+        _bpmCts?.Dispose();
+        _bpmCts = new CancellationTokenSource();
+
+        var bpm = await BpmService.AnalyzeAsync(resolvedPath, _bpmCts.Token);
         track.Bpm = bpm;
         track.BpmState = bpm.HasValue ? "Done" : "Failed";
         StateHasChanged();
@@ -328,6 +332,8 @@ else
     public async ValueTask DisposeAsync()
     {
         refreshTimer?.Dispose();
+        _bpmCts?.Cancel();
+        _bpmCts?.Dispose();
         if (hubConnection is not null)
             await hubConnection.DisposeAsync();
     }
