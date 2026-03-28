@@ -25,13 +25,17 @@ public class DownloadService
             _jobs.TryAdd(job.Id, job);
     }
 
-    public DownloadJob CreateJob(string input)
+    public IReadOnlyList<string> GetAvailableProfiles() => Config.GetAvailableProfiles();
+
+    public DownloadJob CreateJob(string input, bool albumMode = false, string? profile = null)
     {
         var job = new DownloadJob
         {
             Input = input.Trim(),
             InputType = InputTypeDetector.Detect(input),
             DownloadPath = GetDownloadPath(),
+            AlbumMode = albumMode,
+            Profile = profile,
         };
         _jobs.TryAdd(job.Id, job);
         _ = Task.Run(() => ProcessJobAsync(job));
@@ -282,7 +286,8 @@ public class DownloadService
             input = csvPath;
         }
 
-        args.Add(input);
+        if (!string.IsNullOrEmpty(input))
+            args.Add(input);
         args.Add("--path"); args.Add(job.DownloadPath);
 
         var s = _settings.Get();
@@ -292,6 +297,11 @@ public class DownloadService
         if (!string.IsNullOrEmpty(s.SpotifyClientSecret)) { args.Add("--spotify-secret"); args.Add(s.SpotifyClientSecret); }
         args.Add("--pref-format"); args.Add(s.PreferredFormat);
         args.Add("--pref-min-bitrate"); args.Add(s.MinBitrate);
+        if (job.AlbumMode)
+            args.Add("--album");
+
+        if (!string.IsNullOrEmpty(job.Profile))
+        { args.Add("--profile"); args.Add(job.Profile); }
         args.Add("--no-listen");
         args.Add("--write-index");
         args.Add("--nc");
