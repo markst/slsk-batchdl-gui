@@ -178,6 +178,8 @@ else
     private HubConnection? hubConnection;
     private System.Threading.Timer? refreshTimer;
     private CancellationTokenSource? _bpmCts;
+    private Task? _bpmTask;
+    private int _bpmGeneration;
 
     protected override async Task OnInitializedAsync()
     {
@@ -269,16 +271,31 @@ else
         var jobDir = Path.GetFullPath(job.DownloadPath);
         if (!resolvedPath.StartsWith(jobDir, StringComparison.OrdinalIgnoreCase)) return;
 
-        track.BpmState = "Analyzing";
-        StateHasChanged();
+        // Cancel any running analysis and wait for it to finish before starting a new one
+        _bpmCts?.Cancel();
+        if (_bpmTask is not null)
+            await _bpmTask.ConfigureAwait(false);
 
         _bpmCts?.Dispose();
         _bpmCts = new CancellationTokenSource();
+        var generation = ++_bpmGeneration;
 
-        var bpm = await BpmService.AnalyzeAsync(resolvedPath, _bpmCts.Token);
-        track.Bpm = bpm;
-        track.BpmState = bpm.HasValue ? "Done" : "Failed";
+        track.BpmState = "Analyzing";
         StateHasChanged();
+
+        _bpmTask = BpmService.AnalyzeAsync(resolvedPath, _bpmCts.Token)
+            .ContinueWith(t =>
+            {
+                InvokeAsync(() =>
+                {
+                    // Discard result if a newer analysis has since started
+                    if (generation != _bpmGeneration) return;
+                    var bpm = t.IsCompletedSuccessfully ? t.Result : null;
+                    track.Bpm = bpm;
+                    track.BpmState = bpm.HasValue ? "Done" : "Failed";
+                    StateHasChanged();
+                });
+            }, TaskScheduler.Default);
     }
 
     private double SuccessPercent() =>
@@ -334,6 +351,8 @@ else
         refreshTimer?.Dispose();
         _bpmCts?.Cancel();
         _bpmCts?.Dispose();
+        if (_bpmTask is not null)
+            await _bpmTask.ConfigureAwait(false);
         if (hubConnection is not null)
             await hubConnection.DisposeAsync();
     }
