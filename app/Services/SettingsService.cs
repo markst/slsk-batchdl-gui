@@ -49,9 +49,15 @@ public class SettingsService
                 SpotifyClientId = _settings.SpotifyClientId,
                 SpotifyClientSecret = _settings.SpotifyClientSecret,
                 DefaultExtraArgs = _settings.DefaultExtraArgs.Select(a => new ExtraArg { Flag = a.Flag, Value = a.Value }).ToList(),
+                EnableSharing = _settings.EnableSharing,
+                SharedDirectories = new List<string>(_settings.SharedDirectories),
+                SharingListenPort = _settings.SharingListenPort,
+                UserDescription = _settings.UserDescription,
             };
         }
     }
+
+    public event Action? OnSettingsChanged;
 
     public void Update(AppSettings updated)
     {
@@ -60,6 +66,7 @@ public class SettingsService
             _settings = updated;
             Save();
         }
+        OnSettingsChanged?.Invoke();
     }
 
     private void Save()
