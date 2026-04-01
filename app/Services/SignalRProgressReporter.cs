@@ -15,28 +15,71 @@ public class SignalRProgressReporter : IProgressReporter
 {
     private readonly IHubContext<DownloadHub> _hub;
     private readonly DownloadJob _job;
+    private readonly bool _skipTrackList;
     private DateTime _lastProgressReport = DateTime.MinValue;
     private readonly TimeSpan _progressThrottle = TimeSpan.FromMilliseconds(300);
 
-    public SignalRProgressReporter(IHubContext<DownloadHub> hub, DownloadJob job)
+    public SignalRProgressReporter(IHubContext<DownloadHub> hub, DownloadJob job, bool skipTrackList = false)
     {
         _hub = hub;
         _job = job;
+        _skipTrackList = skipTrackList;
     }
 
     private IClientProxy All => _hub.Clients.All;
 
     public void ReportTrackList(List<Track> tracks, int listIndex = 0)
     {
-        var newTracks = tracks.Select(t => new TrackInfo
+        if (_skipTrackList) return;
+
+        var existingTracks = _job.Tracks;
+
+        if (existingTracks.Count > 0)
         {
-            Artist = t.Artist,
-            Title = t.Title,
-            Album = t.Album,
-            Length = t.Length,
-            State = t.State.ToString(),
-        });
-        _job.Tracks.AddRange(newTracks);
+            // Merge: preserve state of already-completed tracks from a previous run
+            var incoming = tracks.Select((t, i) => new TrackInfo
+            {
+                Artist = t.Artist,
+                Title = t.Title,
+                Album = t.Album,
+                Length = t.Length,
+                State = t.State.ToString(),
+            }).ToList();
+
+            foreach (var newTrack in incoming)
+            {
+                var existing = existingTracks.FirstOrDefault(e =>
+                    string.Equals(e.Title, newTrack.Title, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrEmpty(e.Artist) || string.IsNullOrEmpty(newTrack.Artist) ||
+                     e.Artist.Contains(newTrack.Artist, StringComparison.OrdinalIgnoreCase) ||
+                     newTrack.Artist.Contains(e.Artist, StringComparison.OrdinalIgnoreCase)));
+
+                if (existing is not null && existing.State is "Downloaded" or "AlreadyExists")
+                {
+                    // Keep the completed track's state, file path, etc.
+                    newTrack.State = existing.State;
+                    newTrack.DownloadPath = existing.DownloadPath;
+                    newTrack.Extension = existing.Extension;
+                    newTrack.Username = existing.Username;
+                    newTrack.BitRate = existing.BitRate;
+                    newTrack.Filename = existing.Filename;
+                    newTrack.Progress = 100;
+                }
+            }
+
+            _job.Tracks = incoming;
+        }
+        else
+        {
+            _job.Tracks = tracks.Select((t, i) => new TrackInfo
+            {
+                Artist = t.Artist,
+                Title = t.Title,
+                Album = t.Album,
+                Length = t.Length,
+                State = t.State.ToString(),
+            }).ToList();
+        }
 
         _ = All.SendAsync("TrackList", _job.Id, _job.Tracks);
     }
