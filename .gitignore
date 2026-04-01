@@ -34,3 +34,8 @@ app/node_modules/
 **/node_modules/
 *.log
 npm-debug.log*
+
+# Electron.NET host output (electronize start/build)
+obj/Host/
+app/obj/Host/
+app/bin/Desktop/
