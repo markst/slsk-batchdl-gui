@@ -506,6 +506,37 @@ a:hover { text-decoration: underline; }
 }
 .shared-dir-add-row input:focus { outline: none; border-color: #6ee7b7; }
 
+/* ===== Folder Browse ===== */
+.path-browse-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.path-display {
+    flex: 1;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: #bbb;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.btn-browse {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 0.45rem 0.85rem;
+    color: #e0e0e0;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.2s, color 0.2s;
+}
+.btn-browse:hover { border-color: #6ee7b7; color: #6ee7b7; }
+
 /* ===== Audio Player Bar ===== */
 .has-player { padding-bottom: 5rem; }
 
