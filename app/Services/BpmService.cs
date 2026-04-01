@@ -75,7 +75,7 @@ public class BpmService
         {
             return ext switch
             {
-                ".mp3" => new Mp3FileReaderBase(filePath, wf => new Mp3FrameWrapper(wf)),
+                ".mp3" => new Mp3FileReaderBase(filePath, wf => new Mp3FrameDecompressor(wf)),
                 ".wav" => new WaveFileReader(filePath),
                 ".aiff" or ".aif" => new AiffFileReader(filePath),
                 _ => null
