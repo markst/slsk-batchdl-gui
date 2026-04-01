@@ -64,6 +64,47 @@
     </div>
 
     <div class="settings-group">
+        <h3>File Sharing</h3>
+        <div class="settings-field">
+            <label>
+                <input type="checkbox" @bind="model.EnableSharing" />
+                Enable file sharing
+            </label>
+        </div>
+        @if (model.EnableSharing)
+        {
+            <div class="settings-field">
+                <label for="share-port">Listen Port</label>
+                <input id="share-port" type="number" @bind="model.SharingListenPort" placeholder="50000" />
+            </div>
+            <div class="settings-field">
+                <label for="user-desc">User Description</label>
+                <input id="user-desc" type="text" @bind="model.UserDescription" placeholder="sldl-web" />
+            </div>
+            <div class="settings-field">
+                <label>Shared Directories</label>
+                @if (model.SharedDirectories.Any())
+                {
+                    <div class="shared-dirs-list">
+                        @for (int i = 0; i < model.SharedDirectories.Count; i++)
+                        {
+                            var idx = i;
+                            <div class="shared-dir-row">
+                                <span class="shared-dir-path">@model.SharedDirectories[idx]</span>
+                                <button class="btn-remove-arg" @onclick="() => RemoveSharedDir(idx)" title="Remove">×</button>
+                            </div>
+                        }
+                    </div>
+                }
+                <div class="shared-dir-add-row">
+                    <input type="text" @bind="pendingSharedDir" placeholder="/path/to/music/folder" />
+                    <button class="btn-add-arg" @onclick="AddSharedDir" disabled="@string.IsNullOrWhiteSpace(pendingSharedDir)">+</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="settings-group">
         <h3>Default Extra Arguments <span class="muted">(applied to every download)</span></h3>
         @if (model.DefaultExtraArgs.Any())
         {
@@ -111,6 +152,7 @@
 
     private string selectedArgFlag = "";
     private string pendingArgValue = "";
+    private string pendingSharedDir = "";
 
     private KnownArg? SelectedKnown =>
         KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
@@ -140,6 +182,20 @@
     {
         if (index >= 0 && index < model.DefaultExtraArgs.Count)
             model.DefaultExtraArgs.RemoveAt(index);
+    }
+
+    private void AddSharedDir()
+    {
+        var dir = pendingSharedDir.Trim();
+        if (!string.IsNullOrEmpty(dir) && !model.SharedDirectories.Contains(dir))
+            model.SharedDirectories.Add(dir);
+        pendingSharedDir = "";
+    }
+
+    private void RemoveSharedDir(int index)
+    {
+        if (index >= 0 && index < model.SharedDirectories.Count)
+            model.SharedDirectories.RemoveAt(index);
     }
 
     private void Save()
