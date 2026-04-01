@@ -540,6 +540,14 @@ a:hover { text-decoration: underline; }
     overflow: hidden;
 }
 
+/* ===== Album Groups ===== */
+.album-group {
+    margin-bottom: 1.25rem;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
 .extra-args-toggle {
     padding: 0.55rem 0.9rem;
     font-size: 0.8rem;
@@ -709,6 +717,194 @@ details[open] > .extra-args-toggle::before { transform: rotate(90deg); }
     font-style: italic;
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+.album-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0.75rem;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.album-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.album-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-artist {
+    font-size: 0.78rem;
+    color: #888;
+}
+
+.album-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.album-stats {
+    font-size: 0.78rem;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+}
+
+.album-progress-bar {
+    width: 60px;
+    height: 3px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.album-progress-fill {
+    height: 100%;
+    background: #6ee7b7;
+    transition: width 0.3s;
+}
+
+.album-group .track-row:last-child {
+    border-bottom: none;
+}
+
+/* ===== Form bottom row ===== */
+.form-bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.form-options {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+}
+
+.form-options-divider {
+    width: 1px;
+    height: 16px;
+    background: #2e2e2e;
+    flex-shrink: 0;
+}
+
+/* Toggle switch */
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #888;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.toggle-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 28px;
+    height: 16px;
+    background: #2e2e2e;
+    border-radius: 8px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.toggle-label input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #666;
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s, background 0.2s;
+}
+
+.toggle-label input[type="checkbox"]:checked {
+    background: #1a3d30;
+}
+
+.toggle-label input[type="checkbox"]:checked::after {
+    left: 15px;
+    background: #6ee7b7;
+}
+
+/* Profile custom dropdown */
+.profile-dropdown {
+    position: relative;
+}
+
+.profile-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.8rem;
+}
+
+.profile-label-text {
+    color: #555;
+}
+
+.profile-value {
+    color: #999;
+}
+
+.profile-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 6px;
+    padding: 0.25rem;
+    min-width: 120px;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.profile-option {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    color: #aaa;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.profile-option:hover {
+    background: #252525;
+    color: #ddd;
+}
+
+.profile-option.selected {
+    color: #6ee7b7;
 }
 
 /* ===== Blazor Error ===== */

@@ -80,88 +80,53 @@ else
                 </div>
             </div>
 
-            <div class="track-list">
-                @foreach (var (track, idx) in job.Tracks.Select((t, i) => (t, i)))
+            @if (job.AlbumMode)
+            {
+                @foreach (var album in AlbumGroups())
                 {
-                    <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "")">
-                        <div class="track-index">
-                            @if (IsPlayable(track))
-                            {
-                                <button class="btn-play" @onclick="() => Play(idx)" title="Play">
-                                    @if (playingIndex == idx)
-                                    {
-                                        <span>&#9646;&#9646;</span>
-                                    }
-                                    else
-                                    {
-                                        <span>&#9654;</span>
-                                    }
-                                </button>
-                            }
-                            else
-                            {
-                                @(idx + 1)
-                            }
-                        </div>
-                        <div class="track-info">
-                            <div class="track-title">@track.Title</div>
-                            <div class="track-artist">@track.Artist</div>
-                        </div>
-                        <div class="track-meta">
-                            @if (!string.IsNullOrEmpty(track.Username))
-                            {
-                                <span class="track-user">@track.Username</span>
-                            }
-                            @if (track.Extension != null)
-                            {
-                                <span class="track-ext">.@track.Extension</span>
-                            }
-                            @if (track.BitRate > 0)
-                            {
-                                <span class="track-bitrate">@(track.BitRate)kbps</span>
-                            }
-                            @if (track.BpmState == "Done" && track.Bpm.HasValue)
-                            {
-                                <span class="track-bpm-badge">@track.Bpm.Value.ToString("F0") BPM</span>
-                            }
-                            @if (IsPlayable(track))
-                            {
-                                @if (track.BpmState == "Analyzing")
+                    var done = album.Count(t => t.State is "Downloaded" or "AlreadyExists");
+                    var failed = album.Count(t => t.State == "Failed");
+                    var total = album.Count();
+                    var albumPct = total > 0 ? Math.Round((double)done / total * 100, 1) : 0;
+                    var albumArtist = album.FirstOrDefault(t => !string.IsNullOrEmpty(t.Artist))?.Artist ?? "";
+
+                    <div class="album-group">
+                        <div class="album-header">
+                            <div class="album-header-info">
+                                <span class="album-name">@album.Key</span>
+                                @if (!string.IsNullOrEmpty(albumArtist))
                                 {
-                                    <span class="track-bpm-analyzing">BPM…</span>
+                                    <span class="album-artist">@albumArtist</span>
                                 }
-                                else if (track.BpmState == "Failed")
-                                {
-                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Retry BPM analysis">? BPM</button>
-                                }
-                                else if (track.BpmState != "Done")
-                                {
-                                    <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyze BPM">&#9835; BPM</button>
-                                }
-                            }
-                        </div>
-                        <div class="track-state">
-                            @if (track.State == "Downloading" && track.TotalBytes > 0)
-                            {
-                                <div class="track-progress-bar">
-                                    <div class="track-progress-fill" style="width: @track.Progress%"></div>
+                            </div>
+                            <div class="album-header-right">
+                                <span class="album-stats">
+                                    @done/@total
+                                    @if (failed > 0) { <span class="text-red"> · @failed failed</span> }
+                                </span>
+                                <div class="album-progress-bar">
+                                    <div class="album-progress-fill" style="width: @albumPct%"></div>
                                 </div>
-                                <span class="track-percent">@track.Progress.ToString("F0")%</span>
-                            }
-                            else if (track.State == "Failed")
+                            </div>
+                        </div>
+                        <div class="track-list">
+                            @foreach (var (track, idx) in album.Select((t, i) => (t, i)))
                             {
-                                <span class="state-label">@FormatState(track)</span>
-                                <button class="btn-retry" @onclick="() => RetryTrack(idx)" title="Retry">&#8635;</button>
-                            }
-                            else
-                            {
-                                <span class="state-label">@FormatState(track)</span>
+                                @TrackRow(track, idx + 1)
                             }
                         </div>
                     </div>
                 }
-            </div>
-
+            }
+            else
+            {
+                <div class="track-list">
+                    @foreach (var (track, idx) in job.Tracks.ToList().Select((t, i) => (t, i)))
+                    {
+                        @TrackRow(track, idx + 1)
+                    }
+                </div>
+            }
         }
         else if (job.Status == JobStatus.Running)
         {
@@ -297,6 +262,90 @@ else
                 });
             }, TaskScheduler.Default);
     }
+
+    private IEnumerable<IGrouping<string, TrackInfo>> AlbumGroups() =>
+        job!.Tracks.ToList().GroupBy(t => string.IsNullOrEmpty(t.Album) ? "(Unknown Album)" : t.Album);
+
+    private RenderFragment TrackRow(TrackInfo track, int number) => __builder =>
+    {
+        var idx = job!.Tracks.IndexOf(track);
+        <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "")">
+            <div class="track-index">
+                @if (IsPlayable(track))
+                {
+                    <button class="btn-play" @onclick="() => Play(idx)" title="Play">
+                        @if (playingIndex == idx)
+                        {
+                            <span>&#9646;&#9646;</span>
+                        }
+                        else
+                        {
+                            <span>&#9654;</span>
+                        }
+                    </button>
+                }
+                else
+                {
+                    @number
+                }
+            </div>
+            <div class="track-info">
+                <div class="track-title">@track.Title</div>
+                <div class="track-artist">@track.Artist</div>
+            </div>
+            <div class="track-meta">
+                @if (!string.IsNullOrEmpty(track.Username))
+                {
+                    <span class="track-user">@track.Username</span>
+                }
+                @if (track.Extension != null)
+                {
+                    <span class="track-ext">.@track.Extension</span>
+                }
+                @if (track.BitRate > 0)
+                {
+                    <span class="track-bitrate">@(track.BitRate)kbps</span>
+                }
+                @if (track.BpmState == "Done" && track.Bpm.HasValue)
+                {
+                    <span class="track-bpm-badge">@track.Bpm.Value.ToString("F0") BPM</span>
+                }
+                @if (IsPlayable(track))
+                {
+                    @if (track.BpmState == "Analyzing")
+                    {
+                        <span class="track-bpm-analyzing">BPM…</span>
+                    }
+                    else if (track.BpmState == "Failed")
+                    {
+                        <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Retry BPM analysis">? BPM</button>
+                    }
+                    else if (track.BpmState != "Done")
+                    {
+                        <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyze BPM">&#9835; BPM</button>
+                    }
+                }
+            </div>
+            <div class="track-state">
+                @if (track.State == "Downloading" && track.TotalBytes > 0)
+                {
+                    <div class="track-progress-bar">
+                        <div class="track-progress-fill" style="width: @track.Progress%"></div>
+                    </div>
+                    <span class="track-percent">@track.Progress.ToString("F0")%</span>
+                }
+                else if (track.State == "Failed")
+                {
+                    <span class="state-label">@FormatState(track)</span>
+                    <button class="btn-retry" @onclick="() => RetryTrack(idx)" title="Retry">&#8635;</button>
+                }
+                else
+                {
+                    <span class="state-label">@FormatState(track)</span>
+                }
+            </div>
+        </div>;
+    };
 
     private double SuccessPercent() =>
         job != null && job.TotalTracks > 0 ? Math.Round((double)job.DownloadedTracks / job.TotalTracks * 100, 1) : 0;

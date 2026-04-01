@@ -102,15 +102,12 @@ public class SignalRProgressReporter : IProgressReporter
 
     public void ReportDownloadStart(Track track, string username, Soulseek.File file)
     {
-        var t = FindTrack(track);
-        if (t != null)
-        {
-            t.State = "Downloading";
-            t.Username = username;
-            t.Filename = file.Filename;
-            t.TotalBytes = file.Size;
-            t.Extension = GetExtension(file.Filename);
-        }
+        var t = FindOrAddTrack(track, file.Filename);
+        t.State = "Downloading";
+        t.Username = username;
+        t.Filename = file.Filename;
+        t.TotalBytes = file.Size;
+        t.Extension = GetExtension(file.Filename);
 
         _ = All.SendAsync("DownloadStart", _job.Id, track.Artist, track.Title, username,
             file.Filename, file.Size, GetExtension(file.Filename));
@@ -137,21 +134,18 @@ public class SignalRProgressReporter : IProgressReporter
 
     public void ReportTrackStateChanged(Track track, string? username = null, Soulseek.File? chosenFile = null)
     {
-        var t = FindTrack(track);
-        if (t != null)
+        var t = FindOrAddTrack(track, chosenFile?.Filename);
+        t.State = track.State.ToString();
+        t.FailureReason = track.FailureReason != Enums.FailureReason.None ? track.FailureReason.ToString() : null;
+        t.DownloadPath = !string.IsNullOrEmpty(track.DownloadPath) ? track.DownloadPath : null;
+        if (username != null) t.Username = username;
+        if (chosenFile != null)
         {
-            t.State = track.State.ToString();
-            t.FailureReason = track.FailureReason != Enums.FailureReason.None ? track.FailureReason.ToString() : null;
-            t.DownloadPath = !string.IsNullOrEmpty(track.DownloadPath) ? track.DownloadPath : null;
-            if (username != null) t.Username = username;
-            if (chosenFile != null)
-            {
-                t.Filename = chosenFile.Filename;
-                t.BitRate = chosenFile.BitRate;
-                t.Extension = GetExtension(chosenFile.Filename);
-            }
-            t.Progress = track.State == Enums.TrackState.Downloaded ? 100 : t.Progress;
+            t.Filename = chosenFile.Filename;
+            t.BitRate = chosenFile.BitRate;
+            t.Extension = GetExtension(chosenFile.Filename);
         }
+        t.Progress = track.State == Enums.TrackState.Downloaded ? 100 : t.Progress;
 
         _ = All.SendAsync("TrackStateChanged", _job.Id, track.Artist, track.Title,
             track.State.ToString(),
@@ -169,11 +163,42 @@ public class SignalRProgressReporter : IProgressReporter
         _ = All.SendAsync("JobComplete", _job.Id, downloaded, failed, total);
     }
 
-    private TrackInfo? FindTrack(Track track)
+    private TrackInfo? FindTrack(Track track, string? filename = null)
     {
+        if (filename != null)
+        {
+            var byFile = _job.Tracks.FirstOrDefault(t =>
+                string.Equals(Path.GetFileName(t.Filename ?? ""), Path.GetFileName(filename), StringComparison.OrdinalIgnoreCase));
+            if (byFile != null) return byFile;
+        }
+
         return _job.Tracks.FirstOrDefault(t =>
             string.Equals(t.Artist, track.Artist, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(t.Title, track.Title, StringComparison.OrdinalIgnoreCase));
+            string.Equals(t.Title, track.Title, StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrEmpty(t.Filename)); // only match title-based entries not yet bound to a file
+    }
+
+    private TrackInfo FindOrAddTrack(Track track, string? filename = null)
+    {
+        var t = FindTrack(track, filename);
+        if (t != null) return t;
+
+        var title = track.Title;
+        if (string.IsNullOrEmpty(title) && filename != null)
+            title = Path.GetFileNameWithoutExtension(filename);
+
+        t = new TrackInfo
+        {
+            Artist = track.Artist,
+            Title = title,
+            Album = track.Album,
+            Length = track.Length,
+            Filename = filename, // bind immediately so parallel downloads don't collide
+            State = "Initial",
+        };
+        _job.Tracks.Add(t);
+        _ = All.SendAsync("TrackList", _job.Id, _job.Tracks);
+        return t;
     }
 
     private static string? GetExtension(string filename)
