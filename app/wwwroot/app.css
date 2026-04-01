@@ -461,6 +461,51 @@ a:hover { text-decoration: underline; }
     margin-bottom: 1rem;
 }
 
+/* ===== File Sharing Settings ===== */
+.settings-field input[type="checkbox"] {
+    accent-color: #6ee7b7;
+    margin-right: 0.5rem;
+    width: auto;
+}
+.shared-dirs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+.shared-dir-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.35rem 0.75rem;
+}
+.shared-dir-path {
+    flex: 1;
+    font-size: 0.8rem;
+    color: #bbb;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.shared-dir-add-row {
+    display: flex;
+    gap: 0.5rem;
+}
+.shared-dir-add-row input {
+    flex: 1;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+.shared-dir-add-row input:focus { outline: none; border-color: #6ee7b7; }
+
 /* ===== Audio Player Bar ===== */
 .has-player { padding-bottom: 5rem; }
 

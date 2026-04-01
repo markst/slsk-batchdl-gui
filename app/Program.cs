@@ -18,6 +18,7 @@ builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
 builder.Services.AddSingleton<BpmService>();
+builder.Services.AddHostedService<SharingService>();
 
 var app = builder.Build();
 
