@@ -233,4 +233,95 @@ public class InputTypeDetectorTests
         Assert.Equal("Gaye", result[0]);
         Assert.Equal("Marvin", result[1]);
     }
+
+    // --- Slash separator ---
+
+    [Fact]
+    public void SplitTrack_SlashSeparator_SplitsCorrectly()
+    {
+        var result = InputTypeDetector.SplitTrack("A Man Called Adam / Barefoot In The Head");
+        Assert.Equal(2, result.Length);
+        Assert.Equal("A Man Called Adam", result[0]);
+        Assert.Equal("Barefoot In The Head", result[1]);
+    }
+
+    [Fact]
+    public void HasTrackSeparator_SlashSeparator_ReturnsTrue()
+    {
+        Assert.True(InputTypeDetector.HasTrackSeparator("Bocca Juniors / Raise"));
+    }
+
+    [Fact]
+    public void Detect_SlashSeparatedTracklist_ReturnsTracklist()
+    {
+        var input = """
+            A Man Called Adam / Barefoot In The Head
+            Bocca Juniors / Raise
+            The Grid / Floatation
+            """;
+        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+    }
+
+    // --- ParseTracklist ---
+
+    [Fact]
+    public void ParseTracklist_BasicTracklist_ReturnsCorrectEntries()
+    {
+        var input = """
+            Ten City - Be Free
+            New Musik – The Planet Doesn't Mind
+            Marvin Gaye - What's Going On
+            """;
+
+        var result = InputTypeDetector.ParseTracklist(input);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("Ten City", result[0].Artist);
+        Assert.Equal("Be Free", result[0].Title);
+        Assert.Equal("New Musik", result[1].Artist);
+        Assert.Equal("The Planet Doesn't Mind", result[1].Title);
+        Assert.Equal("Marvin Gaye", result[2].Artist);
+        Assert.Equal("What's Going On", result[2].Title);
+    }
+
+    [Fact]
+    public void ParseTracklist_SlashSeparated_ReturnsCorrectEntries()
+    {
+        var input = """
+            A Man Called Adam / Barefoot In The Head
+            Bocca Juniors / Raise
+            The Grid / Floatation
+            """;
+
+        var result = InputTypeDetector.ParseTracklist(input);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("A Man Called Adam", result[0].Artist);
+        Assert.Equal("Barefoot In The Head", result[0].Title);
+        Assert.Equal("Bocca Juniors", result[1].Artist);
+        Assert.Equal("Raise", result[1].Title);
+    }
+
+    [Fact]
+    public void ParseTracklist_PreservesRawLines()
+    {
+        var input = "1. Ten City - Be Free\n2. Marvin Gaye - What's Going On";
+
+        var result = InputTypeDetector.ParseTracklist(input);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("1. Ten City - Be Free", result[0].RawLine);
+        Assert.Equal("2. Marvin Gaye - What's Going On", result[1].RawLine);
+    }
+
+    [Fact]
+    public void ParseTracklist_NoSeparator_TitleOnlyWithEmptyArtist()
+    {
+        var input = "Just a title";
+        var result = InputTypeDetector.ParseTracklist(input);
+
+        Assert.Single(result);
+        Assert.Equal("", result[0].Artist);
+        Assert.Equal("Just a title", result[0].Title);
+    }
 }

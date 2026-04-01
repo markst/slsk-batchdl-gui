@@ -151,4 +151,28 @@ public class TracklistToCsvTests
         var inputType = InputTypeDetector.Detect(input);
         Assert.Equal("Tracklist", inputType);
     }
+
+    [Fact]
+    public void ConvertTracklist_SlashSeparated_ProducesValidCsv()
+    {
+        var input = """
+            A Man Called Adam / Barefoot In The Head
+            Bocca Juniors / Raise
+            The Grid / Floatation
+            """;
+
+        var csv = ConvertTracklistToCsv(input);
+        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Artist,Title", lines[0]);
+        Assert.Equal(4, lines.Length); // header + 3 tracks
+
+        var row1 = CsvHelper.ParseLine(lines[1]);
+        Assert.Equal("A Man Called Adam", row1[0]);
+        Assert.Equal("Barefoot In The Head", row1[1]);
+
+        var row2 = CsvHelper.ParseLine(lines[2]);
+        Assert.Equal("Bocca Juniors", row2[0]);
+        Assert.Equal("Raise", row2[1]);
+    }
 }

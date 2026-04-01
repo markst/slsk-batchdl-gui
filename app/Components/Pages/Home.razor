@@ -8,92 +8,138 @@
 
 <PageTitle>sldl web</PageTitle>
 
-<section class="input-section">
-    <h2>Download Music</h2>
-    <p class="subtitle">Paste a Spotify playlist URL, YouTube URL, search query, or CSV track list.</p>
+@if (showTrackSelection)
+{
+    <section class="input-section">
+        <h2>Select Tracks</h2>
+        <p class="subtitle">Review the parsed tracklist and deselect any tracks you don't want to download.</p>
 
-    <div class="input-form">
-        <textarea @bind="inputText" @bind:event="oninput"
-                  placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
-                  rows="4"
-                  class="input-textarea"></textarea>
-
-        <details class="extra-args-section">
-            <summary class="extra-args-toggle">Extra Arguments</summary>
-            <div class="extra-args-body">
-                @if (extraArgs.Any())
-                {
-                    <div class="extra-args-list">
-                        @for (int i = 0; i < extraArgs.Count; i++)
-                        {
-                            var idx = i;
-                            var arg = extraArgs[idx];
-                            <div class="extra-arg-row">
-                                <span class="extra-arg-flag">@arg.Flag</span>
-                                @if (!string.IsNullOrEmpty(arg.Value))
-                                {
-                                    <span class="extra-arg-value">@arg.Value</span>
-                                }
-                                <button class="btn-remove-arg" @onclick="() => RemoveArg(idx)" title="Remove">×</button>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="extra-args-add-row">
-                    <select class="extra-args-select" @bind="selectedArgFlag">
-                        <option value="">— pick argument —</option>
-                        @foreach (var known in KnownArg.All)
-                        {
-                            <option value="@known.Flag">@known.Label (@known.Flag)</option>
-                        }
-                    </select>
-                    @if (SelectedKnown is { Type: not "flag" })
-                    {
-                        <input class="extra-args-value-input"
-                               type="@(SelectedKnown.Type == "number" ? "number" : "text")"
-                               placeholder="@SelectedKnown.Placeholder"
-                               @bind="pendingArgValue" />
-                    }
-                    <button class="btn-add-arg" @onclick="AddArg" disabled="@string.IsNullOrEmpty(selectedArgFlag)">+</button>
-                </div>
+        <div class="track-selection">
+            <div class="track-selection-actions">
+                <button class="btn-select-all" @onclick="SelectAllTracks">Select All</button>
+                <button class="btn-select-none" @onclick="DeselectAllTracks">Deselect All</button>
+                <span class="track-selection-count">@parsedTracks.Count(t => t.Selected) of @parsedTracks.Count selected</span>
             </div>
-        </details>
 
-        <div class="form-bottom-row">
-            <div class="form-options">
-                <label class="toggle-label">
-                    <input type="checkbox" @bind="albumMode" />
-                    <span>Album</span>
-                </label>
-                @if (profiles.Count > 0)
+            <div class="track-selection-list">
+                @for (int i = 0; i < parsedTracks.Count; i++)
                 {
-                    <div class="form-options-divider"></div>
-                    <div class="profile-dropdown @(profileOpen ? "open" : "")">
-                        <button type="button" class="profile-trigger" @onclick="ToggleProfile">
-                            <span class="profile-label-text">Profile</span>
-                            <span class="profile-value">@(string.IsNullOrEmpty(selectedProfile) ? "—" : selectedProfile)</span>
-                        </button>
-                        @if (profileOpen)
-                        {
-                            <div class="profile-menu">
-                                <div class="profile-option @(string.IsNullOrEmpty(selectedProfile) ? "selected" : "")"
-                                     @onclick='() => SelectProfile("")'>—</div>
-                                @foreach (var p in profiles)
-                                {
-                                    <div class="profile-option @(selectedProfile == p ? "selected" : "")"
-                                         @onclick="() => SelectProfile(p)">@p</div>
-                                }
-                            </div>
-                        }
-                    </div>
+                    var idx = i;
+                    var track = parsedTracks[idx];
+                    <label class="track-selection-row @(!track.Selected ? "deselected" : "")">
+                        <input type="checkbox" checked="@track.Selected"
+                               @onchange="(e) => ToggleTrack(idx, (bool)(e.Value ?? false))" />
+                        <span class="track-selection-info">
+                            @if (!string.IsNullOrEmpty(track.Artist))
+                            {
+                                <span class="track-selection-artist">@track.Artist</span>
+                                <span class="track-selection-separator">–</span>
+                            }
+                            <span class="track-selection-title">@track.Title</span>
+                        </span>
+                    </label>
                 }
             </div>
-            <button @onclick="Submit" class="btn-submit">
-                <span>Download</span>
-            </button>
+
+            <div class="track-selection-bottom">
+                <button class="btn-cancel" @onclick="CancelTrackSelection">Back</button>
+                <button class="btn-submit" @onclick="DownloadSelected"
+                        disabled="@(!parsedTracks.Any(t => t.Selected))">
+                    <span>Download @parsedTracks.Count(t => t.Selected) Tracks</span>
+                </button>
+            </div>
         </div>
-    </div>
-</section>
+    </section>
+}
+else
+{
+    <section class="input-section">
+        <h2>Download Music</h2>
+        <p class="subtitle">Paste a Spotify playlist URL, YouTube URL, search query, or CSV track list.</p>
+
+        <div class="input-form">
+            <textarea @bind="inputText" @bind:event="oninput"
+                      placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
+                      rows="4"
+                      class="input-textarea"></textarea>
+
+            <details class="extra-args-section">
+                <summary class="extra-args-toggle">Extra Arguments</summary>
+                <div class="extra-args-body">
+                    @if (extraArgs.Any())
+                    {
+                        <div class="extra-args-list">
+                            @for (int i = 0; i < extraArgs.Count; i++)
+                            {
+                                var idx = i;
+                                var arg = extraArgs[idx];
+                                <div class="extra-arg-row">
+                                    <span class="extra-arg-flag">@arg.Flag</span>
+                                    @if (!string.IsNullOrEmpty(arg.Value))
+                                    {
+                                        <span class="extra-arg-value">@arg.Value</span>
+                                    }
+                                    <button class="btn-remove-arg" @onclick="() => RemoveArg(idx)" title="Remove">×</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="extra-args-add-row">
+                        <select class="extra-args-select" @bind="selectedArgFlag">
+                            <option value="">— pick argument —</option>
+                            @foreach (var known in KnownArg.All)
+                            {
+                                <option value="@known.Flag">@known.Label (@known.Flag)</option>
+                            }
+                        </select>
+                        @if (SelectedKnown is { Type: not "flag" })
+                        {
+                            <input class="extra-args-value-input"
+                                   type="@(SelectedKnown.Type == "number" ? "number" : "text")"
+                                   placeholder="@SelectedKnown.Placeholder"
+                                   @bind="pendingArgValue" />
+                        }
+                        <button class="btn-add-arg" @onclick="AddArg" disabled="@string.IsNullOrEmpty(selectedArgFlag)">+</button>
+                    </div>
+                </div>
+            </details>
+
+            <div class="form-bottom-row">
+                <div class="form-options">
+                    <label class="toggle-label">
+                        <input type="checkbox" @bind="albumMode" />
+                        <span>Album</span>
+                    </label>
+                    @if (profiles.Count > 0)
+                    {
+                        <div class="form-options-divider"></div>
+                        <div class="profile-dropdown @(profileOpen ? "open" : "")">
+                            <button type="button" class="profile-trigger" @onclick="ToggleProfile">
+                                <span class="profile-label-text">Profile</span>
+                                <span class="profile-value">@(string.IsNullOrEmpty(selectedProfile) ? "—" : selectedProfile)</span>
+                            </button>
+                            @if (profileOpen)
+                            {
+                                <div class="profile-menu">
+                                    <div class="profile-option @(string.IsNullOrEmpty(selectedProfile) ? "selected" : "")"
+                                         @onclick='() => SelectProfile("")'>—</div>
+                                    @foreach (var p in profiles)
+                                    {
+                                        <div class="profile-option @(selectedProfile == p ? "selected" : "")"
+                                             @onclick="() => SelectProfile(p)">@p</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <button @onclick="Submit" class="btn-submit">
+                    <span>Download</span>
+                </button>
+            </div>
+        </div>
+    </section>
+}
 
 @if (jobs.Any())
 {
@@ -132,7 +178,6 @@
     private bool albumMode;
     private string selectedProfile = "";
     private bool profileOpen = false;
-    private bool isSubmitting;
     private DotNetObjectReference<Home>? _selfRef;
     private IReadOnlyList<string> profiles = [];
     private List<DownloadJob> jobs = new();
@@ -142,6 +187,18 @@
     private List<ExtraArg> extraArgs = new();
     private string selectedArgFlag = "";
     private string pendingArgValue = "";
+
+    // Track selection state
+    private bool showTrackSelection;
+    private List<ParsedTrackEntry> parsedTracks = new();
+
+    private class ParsedTrackEntry
+    {
+        public string RawLine { get; set; } = "";
+        public string Artist { get; set; } = "";
+        public string Title { get; set; } = "";
+        public bool Selected { get; set; } = true;
+    }
 
     private KnownArg? SelectedKnown =>
         KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
@@ -199,14 +256,65 @@
     private async Task Submit()
     {
         if (string.IsNullOrWhiteSpace(inputText) && string.IsNullOrEmpty(selectedProfile)) return;
-        isSubmitting = true;
 
-        var job = DownloadService.CreateJob(inputText, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile, extraArgs);
+        var detectedType = InputTypeDetector.Detect(inputText);
+        if (detectedType == "Tracklist")
+        {
+            var tracks = InputTypeDetector.ParseTracklist(inputText);
+            parsedTracks = tracks.Select(t => new ParsedTrackEntry
+            {
+                RawLine = t.RawLine,
+                Artist = t.Artist,
+                Title = t.Title,
+                Selected = true,
+            }).ToList();
+            showTrackSelection = true;
+            return;
+        }
+
+        StartJob(inputText);
+    }
+
+    private void ToggleTrack(int index, bool selected)
+    {
+        if (index >= 0 && index < parsedTracks.Count)
+            parsedTracks[index].Selected = selected;
+    }
+
+    private void SelectAllTracks()
+    {
+        foreach (var t in parsedTracks) t.Selected = true;
+    }
+
+    private void DeselectAllTracks()
+    {
+        foreach (var t in parsedTracks) t.Selected = false;
+    }
+
+    private void CancelTrackSelection()
+    {
+        showTrackSelection = false;
+        parsedTracks.Clear();
+    }
+
+    private async Task DownloadSelected()
+    {
+        var selectedLines = parsedTracks.Where(t => t.Selected).Select(t => t.RawLine);
+        var filteredInput = string.Join("\n", selectedLines);
+
+        if (string.IsNullOrWhiteSpace(filteredInput)) return;
+
+        showTrackSelection = false;
+        parsedTracks.Clear();
+        StartJob(filteredInput);
+    }
+
+    private void StartJob(string input)
+    {
+        var job = DownloadService.CreateJob(input, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile, extraArgs);
         inputText = "";
         extraArgs = new();
         ResetArgInputState();
-        isSubmitting = false;
-
         Nav.NavigateTo($"/job/{job.Id}");
     }
 
