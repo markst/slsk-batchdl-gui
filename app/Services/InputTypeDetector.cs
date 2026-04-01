@@ -4,7 +4,7 @@ namespace SldlWeb.Services;
 
 public static class InputTypeDetector
 {
-    private static readonly string[] TrackSeparators = [" - ", " – ", " — ", " − "];
+    private static readonly string[] TrackSeparators = [" - ", " – ", " — ", " − ", " / "];
 
     private static readonly Regex LinePrefix = new(
         @"^[\s]*(?:\d+[.\-)\s]*)?(?:\[[\d:]+\]\s*)?",
@@ -62,5 +62,22 @@ public static class InputTypeDetector
             return [clean[..idx].Trim(), clean[(idx + 2)..].Trim()];
         }
         return [clean];
+    }
+
+    /// <summary>
+    /// Parses a freeform tracklist into a list of (rawLine, artist, title) tuples.
+    /// </summary>
+    public static List<(string RawLine, string Artist, string Title)> ParseTracklist(string input)
+    {
+        var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new List<(string RawLine, string Artist, string Title)>();
+        foreach (var line in lines)
+        {
+            var parts = SplitTrack(line);
+            var artist = parts.Length == 2 ? parts[0] : "";
+            var title = parts.Length == 2 ? parts[1] : line.Trim();
+            result.Add((line, artist, title));
+        }
+        return result;
     }
 }
