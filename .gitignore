@@ -27,3 +27,15 @@ appsettings.*.Local.json
 .idea/
 *.swp
 *.swo
+
+# Electron/Node.js build artifacts
+node_modules/
+app/node_modules/
+**/node_modules/
+*.log
+npm-debug.log*
+
+# Electron.NET host output (electronize start/build)
+obj/Host/
+app/obj/Host/
+app/bin/Desktop/
