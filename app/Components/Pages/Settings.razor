@@ -1,6 +1,8 @@
 @page "/settings"
 @using SldlWeb.Models
 @using SldlWeb.Services
+@using ElectronNET.API
+@using ElectronNET.API.Entities
 @inject SettingsService SettingsService
 @rendermode InteractiveServer
 
@@ -44,7 +46,10 @@
         <h3>Downloads</h3>
         <div class="settings-field">
             <label for="dl-path">Download Path</label>
-            <input id="dl-path" type="text" @bind="model.DownloadPath" placeholder="./downloads" />
+            <div class="path-browse-row">
+                <span class="path-display" title="@model.DownloadPath">@(string.IsNullOrEmpty(model.DownloadPath) ? "./downloads" : model.DownloadPath)</span>
+                <button class="btn-browse" @onclick="BrowseDownloadPath">Browse…</button>
+            </div>
         </div>
         <div class="settings-field">
             <label for="pref-format">Preferred Format</label>
@@ -97,8 +102,7 @@
                     </div>
                 }
                 <div class="shared-dir-add-row">
-                    <input type="text" @bind="pendingSharedDir" placeholder="/path/to/music/folder" />
-                    <button class="btn-add-arg" @onclick="AddSharedDir" disabled="@string.IsNullOrWhiteSpace(pendingSharedDir)">+</button>
+                    <button class="btn-browse" @onclick="BrowseSharedDir">Browse…</button>
                 </div>
             </div>
         }
@@ -152,7 +156,7 @@
 
     private string selectedArgFlag = "";
     private string pendingArgValue = "";
-    private string pendingSharedDir = "";
+
 
     private KnownArg? SelectedKnown =>
         KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
@@ -184,12 +188,38 @@
             model.DefaultExtraArgs.RemoveAt(index);
     }
 
-    private void AddSharedDir()
+    private async Task BrowseDownloadPath()
     {
-        var dir = pendingSharedDir.Trim();
-        if (!string.IsNullOrEmpty(dir) && !model.SharedDirectories.Contains(dir))
-            model.SharedDirectories.Add(dir);
-        pendingSharedDir = "";
+        if (!HybridSupport.IsElectronActive) return;
+        var mainWindow = Electron.WindowManager.BrowserWindows.First();
+        var result = await Electron.Dialog.ShowOpenDialogAsync(mainWindow, new OpenDialogOptions
+        {
+            Title = "Select Download Folder",
+            Properties = new[] { OpenDialogProperty.openDirectory }
+        });
+        if (result?.Length > 0)
+        {
+            model.DownloadPath = result[0];
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task BrowseSharedDir()
+    {
+        if (!HybridSupport.IsElectronActive) return;
+        var mainWindow = Electron.WindowManager.BrowserWindows.First();
+        var result = await Electron.Dialog.ShowOpenDialogAsync(mainWindow, new OpenDialogOptions
+        {
+            Title = "Select Shared Directory",
+            Properties = new[] { OpenDialogProperty.openDirectory }
+        });
+        if (result?.Length > 0)
+        {
+            var dir = result[0];
+            if (!model.SharedDirectories.Contains(dir))
+                model.SharedDirectories.Add(dir);
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void RemoveSharedDir(int index)
