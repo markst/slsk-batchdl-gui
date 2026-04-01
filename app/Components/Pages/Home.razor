@@ -178,7 +178,6 @@ else
     private bool albumMode;
     private string selectedProfile = "";
     private bool profileOpen = false;
-    private bool isSubmitting;
     private DotNetObjectReference<Home>? _selfRef;
     private IReadOnlyList<string> profiles = [];
     private List<DownloadJob> jobs = new();
@@ -273,15 +272,7 @@ else
             return;
         }
 
-        isSubmitting = true;
-
-        var job = DownloadService.CreateJob(inputText, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile, extraArgs);
-        inputText = "";
-        extraArgs = new();
-        ResetArgInputState();
-        isSubmitting = false;
-
-        Nav.NavigateTo($"/job/{job.Id}");
+        StartJob(inputText);
     }
 
     private void ToggleTrack(int index, bool selected)
@@ -313,13 +304,17 @@ else
 
         if (string.IsNullOrWhiteSpace(filteredInput)) return;
 
-        var job = DownloadService.CreateJob(filteredInput, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile, extraArgs);
+        showTrackSelection = false;
+        parsedTracks.Clear();
+        StartJob(filteredInput);
+    }
+
+    private void StartJob(string input)
+    {
+        var job = DownloadService.CreateJob(input, albumMode, string.IsNullOrEmpty(selectedProfile) ? null : selectedProfile, extraArgs);
         inputText = "";
         extraArgs = new();
         ResetArgInputState();
-        showTrackSelection = false;
-        parsedTracks.Clear();
-
         Nav.NavigateTo($"/job/{job.Id}");
     }
 
