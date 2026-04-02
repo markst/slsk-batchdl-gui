@@ -176,7 +176,7 @@ public class DownloadService
         if (!_jobs.TryGetValue(jobId, out var job)) return [];
         if (!Directory.Exists(job.DownloadPath)) return [];
         return Directory.GetFiles(job.DownloadPath, "*.*", SearchOption.AllDirectories)
-            .Where(f => !f.EndsWith("_index.csv") && !f.EndsWith("_input.csv") && !f.EndsWith(".incomplete"))
+            .Where(f => !f.EndsWith("_index.csv") && !f.EndsWith("tracks.csv") && !f.EndsWith(".incomplete"))
             .Select(f => Path.GetRelativePath(job.DownloadPath, f));
     }
 
@@ -285,7 +285,7 @@ public class DownloadService
         // CSV or tracklist input: write to temp CSV file
         if (job.InputType == InputType.CSV || job.InputType == InputType.Tracklist)
         {
-            var csvPath = Path.Combine(job.DownloadPath, "_input.csv");
+            var csvPath = Path.Combine(job.DownloadPath, "tracks.csv");
             var csvContent = job.InputType == InputType.Tracklist
                 ? ConvertTracklistToCsv(input)
                 : input;

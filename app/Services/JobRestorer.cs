@@ -22,7 +22,7 @@ public class JobRestorer
 
         foreach (var dir in Directory.GetDirectories(basePath).OrderBy(d => d))
         {
-            var inputPath = Path.Combine(dir, "_input.csv");
+            var inputPath = Path.Combine(dir, "tracks.csv");
             var rootIndexPath = Path.Combine(dir, "_index.csv");
             if (!File.Exists(inputPath) && !File.Exists(rootIndexPath)) continue;
 
