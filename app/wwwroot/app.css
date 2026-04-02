@@ -1087,6 +1087,42 @@ details[open] > .extra-args-toggle::before { transform: rotate(90deg); }
     text-overflow: ellipsis;
 }
 
+.track-edit-artist,
+.track-edit-title {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+    min-width: 0;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.track-edit-artist {
+    font-weight: 500;
+    color: #e0e0e0;
+    flex: 0 1 auto;
+    max-width: 45%;
+}
+
+.track-edit-title {
+    color: #999;
+    flex: 1 1 auto;
+}
+
+.track-edit-artist:hover,
+.track-edit-title:hover {
+    border-color: #444;
+}
+
+.track-edit-artist:focus,
+.track-edit-title:focus {
+    border-color: #6ee7b7;
+    background: #1a1a1a;
+}
+
 .track-selection-bottom {
     display: flex;
     align-items: center;

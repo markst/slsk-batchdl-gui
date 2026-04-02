@@ -12,7 +12,7 @@
 {
     <section class="input-section">
         <h2>Select Tracks</h2>
-        <p class="subtitle">Review the parsed tracklist and deselect any tracks you don't want to download.</p>
+        <p class="subtitle">Review the parsed tracklist. Edit artist or title, and deselect any tracks you don't want to download.</p>
 
         <div class="track-selection">
             <div class="track-selection-actions">
@@ -26,18 +26,21 @@
                 {
                     var idx = i;
                     var track = parsedTracks[idx];
-                    <label class="track-selection-row @(!track.Selected ? "deselected" : "")">
+                    <div class="track-selection-row @(!track.Selected ? "deselected" : "")">
                         <input type="checkbox" checked="@track.Selected"
                                @onchange="(e) => ToggleTrack(idx, (bool)(e.Value ?? false))" />
                         <span class="track-selection-info">
-                            @if (!string.IsNullOrEmpty(track.Artist))
-                            {
-                                <span class="track-selection-artist">@track.Artist</span>
-                                <span class="track-selection-separator">–</span>
-                            }
-                            <span class="track-selection-title">@track.Title</span>
+                            <input type="text" class="track-edit-artist" placeholder="Artist"
+                                   aria-label="Track artist"
+                                   value="@track.Artist"
+                                   @onchange="(e) => UpdateTrackArtist(idx, e.Value?.ToString() ?? string.Empty)" />
+                            <span class="track-selection-separator">–</span>
+                            <input type="text" class="track-edit-title" placeholder="Title"
+                                   aria-label="Track title"
+                                   value="@track.Title"
+                                   @onchange="(e) => UpdateTrackTitle(idx, e.Value?.ToString() ?? string.Empty)" />
                         </span>
-                    </label>
+                    </div>
                 }
             </div>
 
@@ -198,6 +201,9 @@ else
         public string Artist { get; set; } = "";
         public string Title { get; set; } = "";
         public bool Selected { get; set; } = true;
+
+        public string ToTrackLine() =>
+            string.IsNullOrEmpty(Artist) ? Title : $"{Artist} - {Title}";
     }
 
     private KnownArg? SelectedKnown =>
@@ -297,9 +303,23 @@ else
         parsedTracks.Clear();
     }
 
+    private void UpdateTrackArtist(int index, string artist)
+    {
+        if (index >= 0 && index < parsedTracks.Count)
+            parsedTracks[index].Artist = artist.Trim();
+    }
+
+    private void UpdateTrackTitle(int index, string title)
+    {
+        if (index >= 0 && index < parsedTracks.Count)
+            parsedTracks[index].Title = title.Trim();
+    }
+
     private async Task DownloadSelected()
     {
-        var selectedLines = parsedTracks.Where(t => t.Selected).Select(t => t.RawLine);
+        var selectedLines = parsedTracks
+            .Where(t => t.Selected)
+            .Select(t => t.ToTrackLine());
         var filteredInput = string.Join("\n", selectedLines);
 
         if (string.IsNullOrWhiteSpace(filteredInput)) return;
