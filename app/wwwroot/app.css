@@ -146,6 +146,8 @@ a:hover { text-decoration: underline; }
 .input-form { display: flex; flex-direction: column; gap: 0.75rem; }
 
 .input-textarea {
+    width: 100%;
+    box-sizing: border-box;
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
@@ -162,6 +164,21 @@ a:hover { text-decoration: underline; }
     border-color: #6ee7b7;
 }
 .input-textarea::placeholder { color: #555; }
+
+.btn-paste {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #888;
+    font-size: 0.85rem;
+    padding: 0.1rem 0.35rem;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
+    vertical-align: middle;
+    margin-left: 0.3rem;
+}
+.btn-paste:hover { opacity: 1; color: #6ee7b7; border-color: #6ee7b7; }
 
 .btn-submit {
     align-self: flex-end;
