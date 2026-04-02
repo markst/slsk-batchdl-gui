@@ -144,4 +144,16 @@ public class CsvHelperTests
         var tracks = CsvHelper.ParseCsvText(csv);
         Assert.Equal(2, tracks.Count);
     }
+
+    [Fact]
+    public void ParseCsvText_FullyQuotedCsv_ReturnsTracks()
+    {
+        var csv = "\"artist\",\"title\",\"status\",\"date\",\"longitude\",\"latitude\"\n\"Nerva\",\"The Scorpion\",\"N/A\",\"2025-02-09T14:01:26.276Z\",\"0.0\",\"0.0\"\n\"Moog Conspiracy\",\"Kamuy\",\"N/A\",\"2025-02-09T11:07:04.891Z\",\"0.0\",\"0.0\"\n\"Sleep D\",\"Hydralite\",\"N/A\",\"2025-02-09T10:55:00.093Z\",\"0.0\",\"0.0\"\n\"Hechizeros Band\",\"El Sonidito\",\"N/A\",\"2025-02-08T06:45:12.714Z\",\"0.0\",\"0.0\"";
+        var tracks = CsvHelper.ParseCsvText(csv);
+        Assert.Equal(4, tracks.Count);
+        Assert.Equal(("Nerva", "The Scorpion"), tracks[0]);
+        Assert.Equal(("Moog Conspiracy", "Kamuy"), tracks[1]);
+        Assert.Equal(("Sleep D", "Hydralite"), tracks[2]);
+        Assert.Equal(("Hechizeros Band", "El Sonidito"), tracks[3]);
+    }
 }

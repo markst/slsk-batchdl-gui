@@ -96,6 +96,27 @@ public class InputTypeDetectorTests
     }
 
     [Fact]
+    public void Detect_CsvWithQuotedHeaders_ReturnsCsv()
+    {
+        var csv = "\"artist\",\"title\",\"status\",\"date\"\n\"Nerva\",\"The Scorpion\",\"N/A\",\"2025-02-09\"";
+        Assert.Equal(InputType.CSV, InputTypeDetector.Detect(csv));
+    }
+
+    [Fact]
+    public void Detect_CsvWithQuotedHeadersExtraColumns_ReturnsCsv()
+    {
+        var csv = "\"artist\",\"title\",\"status\",\"date\",\"longitude\",\"latitude\"\n\"Nerva\",\"The Scorpion\",\"N/A\",\"2025-02-09T14:01:26.276Z\",\"0.0\",\"0.0\"\n\"Moog Conspiracy\",\"Kamuy\",\"N/A\",\"2025-02-09T11:07:04.891Z\",\"0.0\",\"0.0\"";
+        Assert.Equal(InputType.CSV, InputTypeDetector.Detect(csv));
+    }
+
+    [Fact]
+    public void Detect_NonStandardColumnNames_DoesNotReturnCsv()
+    {
+        var csv = "Z_PK,Z_ENT,Z_OPT,ZARTISTNAME,ZTITLE\n1,8,17,Made By Pete,Horizon Red";
+        Assert.NotEqual(InputType.CSV, InputTypeDetector.Detect(csv));
+    }
+
+    [Fact]
     public void Detect_SingleWordSearch_ReturnsSearch()
     {
         Assert.Equal(InputType.Search, InputTypeDetector.Detect("Radiohead"));
