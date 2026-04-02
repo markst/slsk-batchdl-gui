@@ -6,8 +6,6 @@ using SldlWeb.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
-
 builder.WebHost.UseElectron(args);
 
 builder.Services.AddRazorComponents()
@@ -15,6 +13,7 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
 builder.Services.AddSingleton<BpmService>();
