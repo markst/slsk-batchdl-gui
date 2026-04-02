@@ -4,9 +4,11 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 
 ## Features
 
+- **Login page** — validates your Soulseek credentials before granting access; auto-logs in on restart if saved credentials are valid
 - Paste a Spotify playlist URL, CSV content, or search query
 - Real-time download progress via SignalR
 - Track-by-track status with progress bars
+- In-app **Settings** page for all configuration (credentials, download prefs, Spotify API keys)
 - Dark theme UI
 - Single .NET process — no separate frontend server
 - **Cross-platform desktop app** via [Electron.NET](https://github.com/ElectronNET/Electron.NET) — runs on macOS, Windows, and Linux
@@ -57,27 +59,7 @@ cd slsk-batchdl-gui
 dotnet tool install ElectronNET.CLI -g
 ```
 
-### 3. Configure
-
-Edit `app/appsettings.json` with your credentials:
-
-```json
-{
-  "Sldl": {
-    "Username": "your_soulseek_username",
-    "Password": "your_soulseek_password",
-    "DownloadPath": "./downloads",
-    "PreferredFormat": "mp3",
-    "MinBitrate": "200"
-  },
-  "Spotify": {
-    "ClientId": "",
-    "ClientSecret": ""
-  }
-}
-```
-
-### 4. Run as a desktop app
+### 3. Run as a desktop app
 
 ```bash
 cd app
@@ -116,19 +98,7 @@ dotnet run --project app
 
 Open [http://localhost:5223](http://localhost:5223)
 
-## Configuration
-
-### appsettings.json
-
-| Key | Required | Description |
-|-----|----------|-------------|
-| `Sldl:Username` | Yes | Soulseek username |
-| `Sldl:Password` | Yes | Soulseek password |
-| `Sldl:DownloadPath` | No | Download directory (default: `./downloads`) |
-| `Sldl:PreferredFormat` | No | Preferred audio format (default: `mp3`) |
-| `Sldl:MinBitrate` | No | Minimum bitrate (default: `200`) |
-| `Spotify:ClientId` | For Spotify | Spotify API client ID |
-| `Spotify:ClientSecret` | For Spotify | Spotify API client secret |
+On first launch you'll be presented with a login page — enter your Soulseek credentials. All other settings (download path, format, Spotify API keys, etc.) can be configured from the **Settings** page inside the app.
 
 ### Getting Spotify API Credentials
 
@@ -145,19 +115,23 @@ Open [http://localhost:5223](http://localhost:5223)
 │   ├── Program.cs                 # App startup, service registration, Electron.NET
 │   ├── electron.manifest.json     # Electron app configuration
 │   ├── Components/
-│   │   ├── Layout/MainLayout.razor
+│   │   ├── Layout/
+│   │   │   ├── MainLayout.razor   # Auth-gated layout with logout
+│   │   │   └── LoginLayout.razor  # Minimal layout for login page
 │   │   └── Pages/
+│   │       ├── Login.razor        # Soulseek credential validation
 │   │       ├── Home.razor         # Input form + job list
 │   │       └── Job.razor          # Track list with live progress
 │   ├── Hubs/DownloadHub.cs        # SignalR hub
 │   ├── Models/DownloadJob.cs      # Job + track models
 │   ├── Services/
+│   │   ├── AuthService.cs         # Soulseek login validation + auth state
 │   │   ├── DownloadService.cs     # Job management, calls sldl in-process
+│   │   ├── SettingsService.cs     # Persists settings to settings.json
 │   │   └── SignalRProgressReporter.cs  # IProgressReporter → SignalR
 │   └── wwwroot/app.css            # Dark theme styles
-├── .github/workflows/
-│   └── build-desktop.yml          # CI: build Electron packages for Windows & macOS
-└── .env.example
+└── .github/workflows/
+    └── build-desktop.yml          # CI: build Electron packages for Windows & macOS
 ```
 
 ## License
