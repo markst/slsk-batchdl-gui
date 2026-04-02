@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using SldlWeb.Models;
 
 namespace SldlWeb.Services;
 
@@ -10,11 +11,11 @@ public static class InputTypeDetector
         @"^[\s]*(?:\d+[.\-)\s]*)?(?:\[[\d:]+\]\s*)?",
         RegexOptions.Compiled);
 
-    public static string Detect(string input)
+    public static InputType Detect(string input)
     {
-        if (input.Contains("spotify.com") || input.Contains("open.spotify")) return "Spotify";
-        if (input.Contains("youtube.com") || input.Contains("youtu.be")) return "YouTube";
-        if (input.Contains("bandcamp.com")) return "Bandcamp";
+        if (input.Contains("spotify.com") || input.Contains("open.spotify")) return InputType.Spotify;
+        if (input.Contains("youtube.com") || input.Contains("youtu.be")) return InputType.YouTube;
+        if (input.Contains("bandcamp.com")) return InputType.Bandcamp;
 
         var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -26,15 +27,15 @@ public static class InputTypeDetector
             if (headerFields.Any(f => f.Trim().Equals("Artist", StringComparison.OrdinalIgnoreCase))
                 && headerFields.Any(f => f.Trim().Equals("Title", StringComparison.OrdinalIgnoreCase)
                     || f.Trim().Equals("Track", StringComparison.OrdinalIgnoreCase)))
-                return "CSV";
+                return InputType.CSV;
         }
 
         // Tracklist: any line with a track separator counts
         if (lines.Any(l => HasTrackSeparator(l))
             && (lines.Length == 1 || lines.Count(l => HasTrackSeparator(l)) > lines.Length / 2))
-            return "Tracklist";
+            return InputType.Tracklist;
 
-        return "Search";
+        return InputType.Search;
     }
 
     public static string CleanTrackLine(string line)

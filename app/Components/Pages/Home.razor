@@ -153,7 +153,7 @@ else
             {
                 <div class="job-card" @onclick="() => NavigateToJob(job.Id)">
                     <div class="job-header">
-                        <span class="job-type badge-@job.InputType.ToLower()">@job.InputType</span>
+                        <span class="job-type badge-@job.InputType.ToString().ToLower()">@job.InputType</span>
                         <span class="job-status status-@job.Status.ToString().ToLower()">@job.Status</span>
                     </div>
                     <div class="job-input">@Truncate(job.Input, 80)</div>
@@ -264,18 +264,37 @@ else
         if (string.IsNullOrWhiteSpace(inputText) && string.IsNullOrEmpty(selectedProfile)) return;
 
         var detectedType = InputTypeDetector.Detect(inputText);
-        if (detectedType == "Tracklist")
+        switch (detectedType)
         {
-            var tracks = InputTypeDetector.ParseTracklist(inputText);
-            parsedTracks = tracks.Select(t => new ParsedTrackEntry
+            case InputType.Tracklist:
             {
-                RawLine = t.RawLine,
-                Artist = t.Artist,
-                Title = t.Title,
-                Selected = true,
-            }).ToList();
-            showTrackSelection = true;
-            return;
+                var tracks = InputTypeDetector.ParseTracklist(inputText);
+                parsedTracks = tracks.Select(t => new ParsedTrackEntry
+                {
+                    RawLine = t.RawLine,
+                    Artist = t.Artist,
+                    Title = t.Title,
+                    Selected = true,
+                }).ToList();
+                showTrackSelection = true;
+                return;
+            }
+            case InputType.CSV:
+            {
+                var tracks = CsvHelper.ParseCsvText(inputText);
+                if (tracks.Count > 0)
+                {
+                    parsedTracks = tracks.Select(t => new ParsedTrackEntry
+                    {
+                        Artist = t.Artist,
+                        Title = t.Title,
+                        Selected = true,
+                    }).ToList();
+                    showTrackSelection = true;
+                    return;
+                }
+                break;
+            }
         }
 
         StartJob(inputText);

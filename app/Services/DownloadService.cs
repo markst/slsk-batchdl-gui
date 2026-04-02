@@ -283,10 +283,10 @@ public class DownloadService
         var input = job.Input;
 
         // CSV or tracklist input: write to temp CSV file
-        if (job.InputType == "CSV" || job.InputType == "Tracklist")
+        if (job.InputType == InputType.CSV || job.InputType == InputType.Tracklist)
         {
             var csvPath = Path.Combine(job.DownloadPath, "_input.csv");
-            var csvContent = job.InputType == "Tracklist"
+            var csvContent = job.InputType == InputType.Tracklist
                 ? ConvertTracklistToCsv(input)
                 : input;
             File.WriteAllText(csvPath, csvContent);
