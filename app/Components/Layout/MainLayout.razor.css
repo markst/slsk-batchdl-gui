@@ -63,22 +63,4 @@
     margin: 0 auto;
 }
 
-#blazor-error-ui {
-    background: #1a1a2e;
-    border-top: 2px solid #e74c3c;
-    bottom: 0;
-    display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem;
-    position: fixed;
-    width: 100%;
-    z-index: 1000;
-    color: #e0e0e0;
-}
 
-#blazor-error-ui .dismiss {
-    cursor: pointer;
-    position: absolute;
-    right: 0.75rem;
-    top: 0.5rem;
-}
