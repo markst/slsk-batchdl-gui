@@ -39,11 +39,11 @@ public class DownloadService
         {
             Input = input.Trim(),
             InputType = InputTypeDetector.Detect(input),
-            DownloadPath = GetDownloadPath(),
             ExtraArgs = merged,
             AlbumMode = albumMode,
             Profile = profile,
         };
+        job.DownloadPath = GetDownloadPath(job.Id);
         _jobs.TryAdd(job.Id, job);
         _ = Task.Run(() => ProcessJobAsync(job));
         return job;
@@ -313,6 +313,13 @@ public class DownloadService
         args.Add("--write-index");
         args.Add("--nc");
 
+        // Skip tracks already downloaded in previous jobs
+        var basePath = Path.GetDirectoryName(job.DownloadPath);
+        if (!string.IsNullOrEmpty(basePath))
+        {
+            args.Add("--skip-music-dir"); args.Add(basePath);
+        }
+
         foreach (var extra in job.ExtraArgs)
         {
             if (string.IsNullOrWhiteSpace(extra.Flag)) continue;
@@ -339,11 +346,11 @@ public class DownloadService
         return csv.ToString();
     }
 
-    private string GetDownloadPath()
+    private string GetDownloadPath(string jobId)
     {
         var s = _settings.Get();
         var basePath = string.IsNullOrEmpty(s.DownloadPath) ? Path.Combine(Directory.GetCurrentDirectory(), "downloads") : s.DownloadPath;
-        var jobPath = Path.Combine(basePath, DateTime.UtcNow.ToString("yyyy-MM-dd"));
+        var jobPath = Path.Combine(basePath, jobId);
         Directory.CreateDirectory(jobPath);
         return jobPath;
     }

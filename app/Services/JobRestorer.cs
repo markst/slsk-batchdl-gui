@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using SldlWeb.Models;
 
 namespace SldlWeb.Services;
@@ -46,12 +44,9 @@ public class JobRestorer
     private DownloadJob? RestoreFromDirectory(string dir, string inputPath, string rootIndexPath)
     {
         var dirName = Path.GetFileName(dir);
-        var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(dir)))[..8].ToLower();
+        var id = dirName;
 
-        DateTime createdAt = DateTime.TryParseExact(dirName, "yyyy-MM-dd",
-            System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
-            ? parsed : Directory.GetCreationTimeUtc(dir);
+        DateTime createdAt = Directory.GetCreationTimeUtc(dir);
 
         var indexResults = new List<IndexEntry>();
         foreach (var indexFile in Directory.GetFiles(dir, "_index.csv", SearchOption.AllDirectories))
