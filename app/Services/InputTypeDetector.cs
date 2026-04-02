@@ -22,8 +22,7 @@ public static class InputTypeDetector
         // CSV: first line must look like a header row with Artist/Title columns
         if (lines.Length >= 2)
         {
-            var firstLine = lines[0];
-            var headerFields = firstLine.Split(',');
+            var headerFields = CsvHelper.ParseLine(lines[0]);
             if (headerFields.Any(f => f.Trim().Equals("Artist", StringComparison.OrdinalIgnoreCase))
                 && headerFields.Any(f => f.Trim().Equals("Title", StringComparison.OrdinalIgnoreCase)
                     || f.Trim().Equals("Track", StringComparison.OrdinalIgnoreCase)))
