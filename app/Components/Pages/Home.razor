@@ -1,4 +1,5 @@
 ﻿@page "/"
+@using ElectronNET.API
 @using SldlWeb.Models
 @using SldlWeb.Services
 @inject DownloadService DownloadService
@@ -58,13 +59,18 @@ else
 {
     <section class="input-section">
         <h2>Download Music</h2>
-        <p class="subtitle">Paste a Spotify playlist URL, YouTube URL, search query, or CSV track list.</p>
+        <p class="subtitle">Paste a Spotify playlist URL, YouTube URL, search query, or CSV track list.
+            @if (HybridSupport.IsElectronActive)
+            {
+                <button type="button" class="btn-paste" @onclick="PasteFromClipboard" title="Paste from clipboard (preserves newlines)">📋</button>
+            }
+        </p>
 
         <div class="input-form">
             <textarea @bind="inputText" @bind:event="oninput"
                       placeholder="https://open.spotify.com/playlist/...&#10;or: Artist - Title&#10;or CSV with Artist,Title columns"
                       rows="4"
-                      class="input-textarea"></textarea>
+                      class="input-textarea input-textarea-main"></textarea>
 
             <details class="extra-args-section">
                 <summary class="extra-args-toggle">Extra Arguments</summary>
@@ -209,10 +215,15 @@ else
     private KnownArg? SelectedKnown =>
         KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            if (HybridSupport.IsElectronActive)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("registerPasteHandler", _selfRef, ".input-textarea-main");
+            }
             profiles = DownloadService.GetAvailableProfiles();
             RefreshJobs();
             refreshTimer = new System.Threading.Timer(_ =>
@@ -257,6 +268,53 @@ else
     {
         selectedArgFlag = "";
         pendingArgValue = "";
+    }
+
+    private async Task PasteFromClipboard()
+    {
+        // The browser paste event only sees text/plain which loses newlines from web pages.
+        // Electron's clipboard API can read RTF which preserves line breaks.
+        var rtf = await Electron.Clipboard.ReadRTFAsync();
+        if (!string.IsNullOrWhiteSpace(rtf))
+        {
+            inputText = RtfToPlainText(rtf);
+        }
+        else
+        {
+            inputText = await Electron.Clipboard.ReadTextAsync();
+        }
+    }
+
+    private static string RtfToPlainText(string rtf)
+    {
+        // Extract text content after the RTF header/preamble.
+        // RTF line breaks are represented as \<newline> (soft line break).
+        // Strip RTF control words (\word) and groups ({...}).
+
+        var text = rtf;
+
+        // Remove everything up to and including the last \kerning0 or \strokec line (RTF preamble)
+        var preambleEnd = text.LastIndexOf("\\strokec", StringComparison.Ordinal);
+        if (preambleEnd >= 0)
+        {
+            var lineEnd = text.IndexOf('\n', preambleEnd);
+            if (lineEnd >= 0) text = text[(lineEnd + 1)..];
+        }
+
+        // RTF uses \<newline> for line breaks
+        text = text.Replace("\\\n", "\n");
+        text = text.Replace("\\\\", "\\");
+
+        // Remove RTF control words (e.g., \par, \f0, \fs24)
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\[a-zA-Z]+\d*\s?", "");
+        // Remove remaining braces
+        text = text.Replace("{", "").Replace("}", "");
+
+        // Clean up lines
+        var lines = text.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0);
+        return string.Join("\n", lines);
     }
 
     private async Task Submit()
@@ -372,6 +430,15 @@ else
     {
         profileOpen = false;
         InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task<string> ReadClipboardText()
+    {
+        var rtf = await Electron.Clipboard.ReadRTFAsync();
+        if (!string.IsNullOrWhiteSpace(rtf))
+            return RtfToPlainText(rtf);
+        return await Electron.Clipboard.ReadTextAsync();
     }
 
     private void SelectProfile(string p)
