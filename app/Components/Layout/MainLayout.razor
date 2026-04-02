@@ -34,9 +34,14 @@
 @code {
     private bool autoLoginChecked;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         AuthService.OnAuthStateChanged += HandleAuthChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
 
         if (!AuthService.IsLoggedIn)
         {
@@ -49,6 +54,7 @@
         }
 
         autoLoginChecked = true;
+        StateHasChanged();
     }
 
     private void HandleAuthChanged()

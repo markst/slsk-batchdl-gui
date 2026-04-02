@@ -17,7 +17,7 @@
             <div class="login-error">@error</div>
         }
 
-        <EditForm Model="this" OnValidSubmit="HandleLogin" FormName="login">
+        <form @onsubmit="HandleLogin" @onsubmit:preventDefault>
             <div class="login-field">
                 <label for="login-user">Username</label>
                 <input id="login-user" type="text" @bind="username" placeholder="Soulseek username"
@@ -39,7 +39,7 @@
                     <span>Login</span>
                 }
             </button>
-        </EditForm>
+        </form>
     </div>
 </div>
 
@@ -49,9 +49,9 @@
     private string? error;
     private bool loading;
 
-    protected override void OnInitialized()
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (AuthService.IsLoggedIn)
+        if (firstRender && AuthService.IsLoggedIn)
         {
             Nav.NavigateTo("/", replace: true);
         }
