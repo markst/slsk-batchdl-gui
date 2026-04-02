@@ -12,6 +12,132 @@ html, body {
 a { color: #6ee7b7; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* ===== Blazor Error UI ===== */
+#blazor-error-ui {
+    background: #1a1a2e;
+    border-top: 2px solid #e74c3c;
+    bottom: 0;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    color: #e0e0e0;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+/* ===== Login Page ===== */
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+}
+
+.login-logo {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #e0e0e0;
+    letter-spacing: -0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.login-subtitle {
+    color: #888;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.login-error {
+    background: rgba(231, 76, 60, 0.15);
+    border: 1px solid #e74c3c;
+    border-radius: 8px;
+    color: #e74c3c;
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.login-field {
+    text-align: left;
+    margin-bottom: 1rem;
+}
+
+.login-field label {
+    display: block;
+    color: #aaa;
+    font-size: 0.8rem;
+    margin-bottom: 0.3rem;
+}
+
+.login-field input {
+    width: 100%;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+
+.login-field input:focus {
+    outline: none;
+    border-color: #6ee7b7;
+}
+
+.login-field input::placeholder { color: #555; }
+.login-field input:disabled { opacity: 0.5; }
+
+.btn-login {
+    width: 100%;
+    background: #6ee7b7;
+    color: #0f0f0f;
+    border: none;
+    border-radius: 8px;
+    padding: 0.7rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.btn-login:hover:not(:disabled) { background: #5dd4a8; }
+.btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.login-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #0f0f0f;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* ===== Input Section ===== */
 .input-section { margin-bottom: 2.5rem; }
 .input-section h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }

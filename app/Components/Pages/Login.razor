@@ -1,0 +1,83 @@
+@page "/login"
+@using SldlWeb.Services
+@inject AuthService AuthService
+@inject NavigationManager Nav
+@layout SldlWeb.Components.Layout.LoginLayout
+@rendermode InteractiveServer
+
+<PageTitle>Login – sldl web</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-logo">sldl<span class="logo-accent">web</span></div>
+        <p class="login-subtitle">Sign in with your Soulseek account</p>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="login-error">@error</div>
+        }
+
+        <form @onsubmit="HandleLogin" @onsubmit:preventDefault>
+            <div class="login-field">
+                <label for="login-user">Username</label>
+                <input id="login-user" type="text" @bind="username" placeholder="Soulseek username"
+                       disabled="@loading" autocomplete="username" />
+            </div>
+            <div class="login-field">
+                <label for="login-pass">Password</label>
+                <input id="login-pass" type="password" @bind="password" placeholder="Soulseek password"
+                       disabled="@loading" autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn-login" disabled="@loading">
+                @if (loading)
+                {
+                    <span class="login-spinner"></span>
+                    <span>Connecting…</span>
+                }
+                else
+                {
+                    <span>Login</span>
+                }
+            </button>
+        </form>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string? error;
+    private bool loading;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && AuthService.IsLoggedIn)
+        {
+            Nav.NavigateTo("/", replace: true);
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            error = "Username and password are required.";
+            return;
+        }
+
+        loading = true;
+        error = null;
+
+        var (success, err) = await AuthService.LoginAsync(username.Trim(), password);
+
+        if (success)
+        {
+            Nav.NavigateTo("/", replace: true);
+        }
+        else
+        {
+            error = err;
+            loading = false;
+        }
+    }
+}

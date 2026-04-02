@@ -9,11 +9,10 @@ public class SettingsService
     private readonly object _lock = new();
     private AppSettings _settings;
 
-    public SettingsService(IConfiguration config)
+    public SettingsService()
     {
         _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
 
-        // Load from settings.json if it exists, otherwise seed from appsettings.json
         if (File.Exists(_settingsPath))
         {
             var json = File.ReadAllText(_settingsPath);
@@ -21,16 +20,7 @@ public class SettingsService
         }
         else
         {
-            _settings = new AppSettings
-            {
-                SoulseekUsername = config["Sldl:Username"] ?? "",
-                SoulseekPassword = config["Sldl:Password"] ?? "",
-                DownloadPath = config["Sldl:DownloadPath"] ?? "./downloads",
-                PreferredFormat = config["Sldl:PreferredFormat"] ?? "mp3",
-                MinBitrate = config["Sldl:MinBitrate"] ?? "200",
-                SpotifyClientId = config["Spotify:ClientId"] ?? "",
-                SpotifyClientSecret = config["Spotify:ClientSecret"] ?? "",
-            };
+            _settings = new AppSettings();
             Save();
         }
     }
