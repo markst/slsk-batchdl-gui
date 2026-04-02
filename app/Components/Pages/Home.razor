@@ -278,6 +278,22 @@ else
             return;
         }
 
+        if (detectedType == "CSV")
+        {
+            var tracks = CsvHelper.ParseCsvText(inputText);
+            if (tracks.Count > 0)
+            {
+                parsedTracks = tracks.Select(t => new ParsedTrackEntry
+                {
+                    Artist = t.Artist,
+                    Title = t.Title,
+                    Selected = true,
+                }).ToList();
+                showTrackSelection = true;
+                return;
+            }
+        }
+
         StartJob(inputText);
     }
 

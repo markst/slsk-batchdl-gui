@@ -61,10 +61,10 @@ public static class CsvHelper
         return value;
     }
 
-    public static List<(string Artist, string Title)> ParseInputCsv(string path)
+    public static List<(string Artist, string Title)> ParseCsvText(string text)
     {
         var tracks = new List<(string, string)>();
-        var lines = File.ReadAllLines(path);
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (lines.Length < 2) return tracks;
 
         var header = ParseLine(lines[0]);
@@ -83,5 +83,10 @@ public static class CsvHelper
                 tracks.Add((artist, title));
         }
         return tracks;
+    }
+
+    public static List<(string Artist, string Title)> ParseInputCsv(string path)
+    {
+        return ParseCsvText(File.ReadAllText(path));
     }
 }

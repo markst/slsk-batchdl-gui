@@ -94,4 +94,54 @@ public class CsvHelperTests
         Assert.Equal(artist, parsed[0]);
         Assert.Equal(title, parsed[1]);
     }
+
+    // --- ParseCsvText ---
+
+    [Fact]
+    public void ParseCsvText_BasicCsv_ReturnsTracks()
+    {
+        var csv = "Artist,Title\nTen City,Be Free\nNew Musik,The Planet Doesn't Mind";
+        var tracks = CsvHelper.ParseCsvText(csv);
+        Assert.Equal(2, tracks.Count);
+        Assert.Equal(("Ten City", "Be Free"), tracks[0]);
+        Assert.Equal(("New Musik", "The Planet Doesn't Mind"), tracks[1]);
+    }
+
+    [Fact]
+    public void ParseCsvText_TrackColumnAlias_ReturnsTracks()
+    {
+        var csv = "Artist,Track\nMarvin Gaye,What's Going On";
+        var tracks = CsvHelper.ParseCsvText(csv);
+        Assert.Single(tracks);
+        Assert.Equal(("Marvin Gaye", "What's Going On"), tracks[0]);
+    }
+
+    [Fact]
+    public void ParseCsvText_QuotedFieldsWithCommas_ReturnsTracks()
+    {
+        var csv = "Artist,Title\n\"Earth, Wind & Fire\",September";
+        var tracks = CsvHelper.ParseCsvText(csv);
+        Assert.Single(tracks);
+        Assert.Equal(("Earth, Wind & Fire", "September"), tracks[0]);
+    }
+
+    [Fact]
+    public void ParseCsvText_EmptyText_ReturnsEmpty()
+    {
+        Assert.Empty(CsvHelper.ParseCsvText(""));
+    }
+
+    [Fact]
+    public void ParseCsvText_HeaderOnly_ReturnsEmpty()
+    {
+        Assert.Empty(CsvHelper.ParseCsvText("Artist,Title"));
+    }
+
+    [Fact]
+    public void ParseCsvText_SkipsBlankLines_ReturnsTracks()
+    {
+        var csv = "Artist,Title\nTen City,Be Free\n\nNew Musik,Sanctuary";
+        var tracks = CsvHelper.ParseCsvText(csv);
+        Assert.Equal(2, tracks.Count);
+    }
 }
