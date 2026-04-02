@@ -9,7 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseElectron(args);
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        options.DetailedErrors = builder.Environment.IsDevelopment();
+    });
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<SettingsService>();
