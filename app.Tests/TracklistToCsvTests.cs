@@ -1,3 +1,4 @@
+using SldlWeb.Models;
 using SldlWeb.Services;
 
 namespace SldlWeb.Tests;
@@ -126,7 +127,7 @@ public class TracklistToCsvTests
 
         // Detect should classify as Tracklist
         var inputType = InputTypeDetector.Detect(input);
-        Assert.Equal("Tracklist", inputType);
+        Assert.Equal(InputType.Tracklist, inputType);
 
         // Convert should produce valid CSV
         var csv = ConvertTracklistToCsv(input);
@@ -149,7 +150,7 @@ public class TracklistToCsvTests
         var input = "Ten City - Be Free (Emmaculate & Shannon Chambers Mix)";
 
         var inputType = InputTypeDetector.Detect(input);
-        Assert.Equal("Tracklist", inputType);
+        Assert.Equal(InputType.Tracklist, inputType);
     }
 
     [Fact]

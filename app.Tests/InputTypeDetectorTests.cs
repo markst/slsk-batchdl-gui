@@ -1,3 +1,4 @@
+using SldlWeb.Models;
 using SldlWeb.Services;
 
 namespace SldlWeb.Tests;
@@ -10,48 +11,48 @@ public class InputTypeDetectorTests
     [InlineData("https://open.spotify.com/playlist/abc123")]
     [InlineData("https://spotify.com/track/xyz")]
     public void Detect_SpotifyUrls_ReturnsSpotify(string input) =>
-        Assert.Equal("Spotify", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Spotify, InputTypeDetector.Detect(input));
 
     [Theory]
     [InlineData("https://youtube.com/watch?v=abc")]
     [InlineData("https://youtu.be/abc123")]
     public void Detect_YouTubeUrls_ReturnsYouTube(string input) =>
-        Assert.Equal("YouTube", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.YouTube, InputTypeDetector.Detect(input));
 
     [Fact]
     public void Detect_BandcampUrl_ReturnsBandcamp() =>
-        Assert.Equal("Bandcamp", InputTypeDetector.Detect("https://artist.bandcamp.com/album/test"));
+        Assert.Equal(InputType.Bandcamp, InputTypeDetector.Detect("https://artist.bandcamp.com/album/test"));
 
     [Fact]
     public void Detect_CsvWithHeader_ReturnsCsv()
     {
         var csv = "Artist,Title\nMarvin Gaye,What's Going On";
-        Assert.Equal("CSV", InputTypeDetector.Detect(csv));
+        Assert.Equal(InputType.CSV, InputTypeDetector.Detect(csv));
     }
 
     [Fact]
     public void Detect_CsvHeaderCaseInsensitive_ReturnsCsv()
     {
         var csv = "artist,title\nMarvin Gaye,What's Going On";
-        Assert.Equal("CSV", InputTypeDetector.Detect(csv));
+        Assert.Equal(InputType.CSV, InputTypeDetector.Detect(csv));
     }
 
     [Fact]
     public void Detect_SingleTrackWithHyphen_ReturnsTracklist()
     {
-        Assert.Equal("Tracklist", InputTypeDetector.Detect("Ten City - Be Free (Emmaculate & Shannon Chambers Mix)"));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect("Ten City - Be Free (Emmaculate & Shannon Chambers Mix)"));
     }
 
     [Fact]
     public void Detect_SingleTrackWithEnDash_ReturnsTracklist()
     {
-        Assert.Equal("Tracklist", InputTypeDetector.Detect("New Musik – The Planet Doesn't Mind"));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect("New Musik – The Planet Doesn't Mind"));
     }
 
     [Fact]
     public void Detect_SingleTrackWithEmDash_ReturnsTracklist()
     {
-        Assert.Equal("Tracklist", InputTypeDetector.Detect("Artist — Title"));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect("Artist — Title"));
     }
 
     [Fact]
@@ -62,7 +63,7 @@ public class InputTypeDetectorTests
             New Musik – The Planet Doesn't Mind
             Marvin Gaye - What's Going On
             """;
-        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect(input));
     }
 
     [Fact]
@@ -74,14 +75,14 @@ public class InputTypeDetectorTests
             Artist — Song Title
             Another − Track Name
             """;
-        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect(input));
     }
 
     [Fact]
     public void Detect_TrackContainingWordArtist_DoesNotReturnCsv()
     {
         // Track name contains "Artist" but isn't CSV
-        Assert.NotEqual("CSV", InputTypeDetector.Detect("The Artist - My Song, feat. Someone"));
+        Assert.NotEqual(InputType.CSV, InputTypeDetector.Detect("The Artist - My Song, feat. Someone"));
     }
 
     [Fact]
@@ -91,19 +92,19 @@ public class InputTypeDetectorTests
             Title Fight - Head In The Ceiling Fan
             New Musik – The Planet Doesn't Mind
             """;
-        Assert.NotEqual("CSV", InputTypeDetector.Detect(input));
+        Assert.NotEqual(InputType.CSV, InputTypeDetector.Detect(input));
     }
 
     [Fact]
     public void Detect_SingleWordSearch_ReturnsSearch()
     {
-        Assert.Equal("Search", InputTypeDetector.Detect("Radiohead"));
+        Assert.Equal(InputType.Search, InputTypeDetector.Detect("Radiohead"));
     }
 
     [Fact]
     public void Detect_MultiWordSearch_ReturnsSearch()
     {
-        Assert.Equal("Search", InputTypeDetector.Detect("Radiohead OK Computer"));
+        Assert.Equal(InputType.Search, InputTypeDetector.Detect("Radiohead OK Computer"));
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public class InputTypeDetectorTests
             2. New Musik – The Planet Doesn't Mind
             3. Marvin Gaye - What's Going On
             """;
-        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect(input));
     }
 
     [Fact]
@@ -125,7 +126,7 @@ public class InputTypeDetectorTests
             [3:45] New Musik – The Planet Doesn't Mind
             [7:12] Marvin Gaye - What's Going On
             """;
-        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect(input));
     }
 
     // --- HasTrackSeparator ---
@@ -259,7 +260,7 @@ public class InputTypeDetectorTests
             Bocca Juniors / Raise
             The Grid / Floatation
             """;
-        Assert.Equal("Tracklist", InputTypeDetector.Detect(input));
+        Assert.Equal(InputType.Tracklist, InputTypeDetector.Detect(input));
     }
 
     // --- ParseTracklist ---

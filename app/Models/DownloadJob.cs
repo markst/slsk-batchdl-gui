@@ -1,5 +1,15 @@
 namespace SldlWeb.Models;
 
+public enum InputType
+{
+    Spotify,
+    YouTube,
+    Bandcamp,
+    CSV,
+    Tracklist,
+    Search
+}
+
 public enum JobStatus
 {
     Queued,
@@ -56,7 +66,7 @@ public class DownloadJob
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Input { get; set; } = "";
-    public string InputType { get; set; } = "";
+    public InputType InputType { get; set; } = InputType.Search;
     public JobStatus Status { get; set; } = JobStatus.Queued;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
