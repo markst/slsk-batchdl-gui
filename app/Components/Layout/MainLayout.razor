@@ -1,13 +1,27 @@
 ﻿@inherits LayoutComponentBase
+@using SldlWeb.Services
+@inject AuthService AuthService
+@inject NavigationManager Nav
+@implements IDisposable
 
 <div class="app-shell">
     <header class="app-header">
         <a href="/" class="logo">sldl<span class="logo-accent">web</span></a>
-        <a href="/settings" class="header-link">Settings</a>
+        <div class="header-nav">
+            <a href="/settings" class="header-link">Settings</a>
+            <button class="header-link header-btn" @onclick="HandleLogout">Logout</button>
+        </div>
     </header>
 
     <main class="app-main">
-        @Body
+        @if (autoLoginChecked)
+        {
+            @Body
+        }
+        else
+        {
+            <div class="login-checking">Connecting…</div>
+        }
     </main>
 </div>
 
@@ -16,3 +30,46 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">&#x2715;</a>
 </div>
+
+@code {
+    private bool autoLoginChecked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthService.OnAuthStateChanged += HandleAuthChanged;
+
+        if (!AuthService.IsLoggedIn)
+        {
+            var success = await AuthService.TryAutoLoginAsync();
+            if (!success)
+            {
+                Nav.NavigateTo("/login", replace: true);
+                return;
+            }
+        }
+
+        autoLoginChecked = true;
+    }
+
+    private void HandleAuthChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (!AuthService.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login", replace: true);
+            }
+            StateHasChanged();
+        });
+    }
+
+    private void HandleLogout()
+    {
+        AuthService.Logout();
+    }
+
+    public void Dispose()
+    {
+        AuthService.OnAuthStateChanged -= HandleAuthChanged;
+    }
+}
