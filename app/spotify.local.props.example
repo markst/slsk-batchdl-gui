@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <SpotifyClientId>YOUR_CLIENT_ID</SpotifyClientId>
+    <SpotifyClientSecret>YOUR_CLIENT_SECRET</SpotifyClientSecret>
+  </PropertyGroup>
+</Project>

@@ -22,6 +22,7 @@ Thumbs.db
 # Local config overrides
 appsettings.Local.json
 appsettings.*.Local.json
+*.local.props
 
 # IDE
 .idea/
