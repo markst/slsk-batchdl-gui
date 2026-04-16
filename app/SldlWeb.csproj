@@ -4,7 +4,25 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.1.0</Version>
+    <Product>sldlr</Product>
   </PropertyGroup>
+
+  <Import Project="spotify.local.props" Condition="Exists('spotify.local.props')" />
+
+  <Target Name="InjectBuildDefaults" BeforeTargets="CoreCompile">
+    <WriteLinesToFile File="$(IntermediateOutputPath)BuildDefaults.g.cs" Overwrite="true" Lines="
+namespace SldlWeb.Models%3B
+public static class BuildDefaults
+{
+    public const string SpotifyClientId = &quot;$(SpotifyClientId)&quot;%3B
+    public const string SpotifyClientSecret = &quot;$(SpotifyClientSecret)&quot;%3B
+}" />
+    <ItemGroup>
+      <Compile Remove="Models/BuildDefaults.cs" />
+      <Compile Include="$(IntermediateOutputPath)BuildDefaults.g.cs" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="../sldl/slsk-batchdl/slsk-batchdl.csproj" />

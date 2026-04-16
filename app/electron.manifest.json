@@ -3,7 +3,7 @@
   "splashscreen": {
     "imageFile": ""
   },
-  "name": "sldl-web",
+  "name": "sldlr",
   "author": "",
   "singleInstance": true,
   "environment": "Production",
@@ -12,7 +12,7 @@
     "height": 800,
     "minWidth": 800,
     "minHeight": 600,
-    "title": "sldl-web",
+    "title": "sldlr",
     "webPreferences": {
       "nodeIntegration": false,
       "contextIsolation": true
@@ -23,18 +23,30 @@
     "height": 300,
     "isAlwaysOnTop": true
   },
+  "build": {
+    "appId": "com.sldlr.app",
+    "productName": "sldlr",
+    "buildVersion": "0.1.0",
+    "extraResources": [
+      {
+        "from": "./bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      }
+    ]
+  },
   "forge": {
     "electronPackagerConfig": {
-      "name": "sldl-web"
+      "name": "sldlr"
     },
     "electronWinstallerConfig": {
-      "name": "sldl-web"
+      "name": "sldlr"
     },
     "electronDebuilderConfig": {
-      "name": "sldl-web"
+      "name": "sldlr"
     },
     "electronInstallerDMG": {
-      "name": "sldl-web"
+      "name": "sldlr"
     },
     "makers": [
       {
