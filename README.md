@@ -70,18 +70,32 @@ This launches a native desktop window running the Blazor UI.
 
 ### Build a distributable package
 
+#### Spotify API credentials (optional)
+
+To bake Spotify credentials into the build so users don't have to enter them, copy the template and fill in your keys:
+
 ```bash
-# Windows (.exe installer)
-electronize build /target win
-
-# macOS (.dmg)
-electronize build /target osx
-
-# macOS Apple Silicon
-electronize build /target osx /electron-arch arm64
+cp app/spotify.local.props.example app/spotify.local.props
+# Edit app/spotify.local.props with your Client ID and Secret
 ```
 
-Built packages are written to `app/bin/Desktop/`.
+This file is gitignored. If omitted, users can still enter credentials manually in Settings.
+
+#### Build
+
+```bash
+cd app
+
+# macOS (.dmg + .zip)
+electronize build /target osx /PublishReadyToRun false
+
+# Windows (.exe installer)
+electronize build /target win /PublishReadyToRun false
+```
+
+Built packages are written to `app/obj/desktop/{osx,win}/dist/`.
+
+> **Note:** macOS builds are unsigned. Recipients will need to right-click → Open the app the first time.
 
 ## Quick Start (Local — web only)
 
