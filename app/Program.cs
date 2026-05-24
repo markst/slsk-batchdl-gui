@@ -29,6 +29,7 @@ builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
 builder.Services.AddSingleton<BpmService>();
+builder.Services.AddHostedService<SldlEventBridge>();
 // NOTE: SharingService removed (Phase 6: Remove Sharing Feature)
 
 var app = builder.Build();
