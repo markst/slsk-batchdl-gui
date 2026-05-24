@@ -2,6 +2,8 @@
 
 A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl) — batch download music from Soulseek using Spotify playlists, CSV files, or search queries.
 
+The UI connects to a running **sldl daemon** over HTTP REST + SignalR, so the daemon and the UI can be deployed and restarted independently.
+
 ## Features
 
 - **Login page** — validates your Soulseek credentials before granting access; auto-logs in on restart if saved credentials are valid
@@ -16,24 +18,29 @@ A web interface for [slsk-batchdl (sldl)](https://github.com/fiso64/slsk-batchdl
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│              Blazor Server App               │
-│                                              │
-│  Browser  ◄──── SignalR ────►  DownloadService │
-│  (Razor)                       │              │
-│                         DownloaderApplication │
-│                         (sldl in-process)     │
-│                                │              │
-│                           ┌────▼────┐         │
-│                           │downloads│         │
-│                           └─────────┘         │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│               Blazor Server App (sldl-web)           │
+│                                                      │
+│  Browser  ◄──── SignalR (/downloadHub) ────►  DownloadService  │
+│  (Razor)                                    │        │
+│                                    SldlEventBridge   │
+│                                    (BackgroundService)│
+└─────────────────────────────────────┬────────────────┘
+                           HTTP REST  │  SignalR
+                         + SignalR    │  (/api/events)
+                                      ▼
+                    ┌─────────────────────────────┐
+                    │     sldl daemon              │
+                    │  (slsk-batchdl --server)     │
+                    │  http://localhost:5030        │
+                    └─────────────────────────────┘
 ```
 
-- **sldl** is included as a git submodule and referenced as a project dependency
-- The Blazor Server app calls sldl's `DownloaderApplication` directly in-process
-- A `SignalRProgressReporter` implements sldl's `IProgressReporter` interface to push real-time updates to the browser
+- The sldl daemon runs as a separate process (`slsk-batchdl --server`) and exposes an HTTP REST API at `http://localhost:5030` (configurable via `SldlDaemonUrl` in `appsettings.json`)
+- **`DownloadService`** submits jobs to the daemon via `POST api/jobs/extract|downloads/song|downloads/album` and polls `GET api/workflows/{id}` as a fallback
+- **`SldlEventBridge`** subscribes to the daemon's SignalR hub at `/api/events` (`serverEvent` method) and pushes live `song.state-changed`, `download.progress`, and `workflow.upserted` events to the browser
 - **Electron.NET** wraps the Blazor Server app in an Electron window for a native desktop experience
+- The sldl source is included as a git submodule (pinned at the AGPL-3.0 relicense commit); `Sldl.Api` contract types are referenced directly — no local DTO mirror
 
 ## Quick Start (Desktop App)
 
@@ -41,9 +48,10 @@ Pre-built binaries for macOS and Windows are available on the [Releases](../../r
 
 ### Prerequisites (building from source)
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js 20+](https://nodejs.org/)
 - A Soulseek account (create one at https://www.slsknet.org/)
+- A running sldl daemon (see [sldl server docs](sldl/README.md))
 - (Optional) Spotify API credentials for playlist URL support
 
 ### 1. Clone with submodules
@@ -101,8 +109,19 @@ Built packages are written to `app/obj/desktop/{osx,win}/dist/`.
 
 ### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- A running sldl daemon (`slsk-batchdl --server`, default port 5030)
 - A Soulseek account (create one at https://www.slsknet.org/)
+
+### Configure the daemon URL (optional)
+
+By default the app connects to `http://localhost:5030`. Override in `app/appsettings.json`:
+
+```json
+{
+  "SldlDaemonUrl": "http://localhost:5030"
+}
+```
 
 ### Run
 
@@ -124,8 +143,8 @@ On first launch you'll be presented with a login page — enter your Soulseek cr
 
 ```
 .
-├── sldl/                          # git submodule: slsk-batchdl
-├── app/                           # .NET 8 Blazor Server app
+├── sldl/                          # git submodule: slsk-batchdl (pinned, AGPL-3.0)
+├── app/                           # .NET 10 Blazor Server app
 │   ├── Program.cs                 # App startup, service registration, Electron.NET
 │   ├── electron.manifest.json     # Electron app configuration
 │   ├── Components/
@@ -136,13 +155,17 @@ On first launch you'll be presented with a login page — enter your Soulseek cr
 │   │       ├── Login.razor        # Soulseek credential validation
 │   │       ├── Home.razor         # Input form + job list
 │   │       └── Job.razor          # Track list with live progress
-│   ├── Hubs/DownloadHub.cs        # SignalR hub
-│   ├── Models/DownloadJob.cs      # Job + track models
+│   ├── Hubs/DownloadHub.cs        # SignalR hub (/downloadHub)
+│   ├── Models/
+│   │   ├── DownloadJob.cs         # Job + track models
+│   │   ├── DaemonStateMapper.cs   # Maps ServerJobState → app strings
+│   │   └── SldlEventEnvelope.cs   # Local envelope for daemon SignalR events
 │   ├── Services/
 │   │   ├── AuthService.cs         # Soulseek login validation + auth state
-│   │   ├── DownloadService.cs     # Job management, calls sldl in-process
-│   │   ├── SettingsService.cs     # Persists settings to settings.json
-│   │   └── SignalRProgressReporter.cs  # IProgressReporter → SignalR
+│   │   ├── DownloadService.cs     # Job management, calls sldl daemon via HTTP
+│   │   ├── SldlEventBridge.cs     # Subscribes to daemon SignalR event hub
+│   │   ├── JobRestorer.cs         # Restores persisted jobs from disk on startup
+│   │   └── SettingsService.cs     # Persists settings to settings.json
 │   └── wwwroot/app.css            # Dark theme styles
 └── .github/workflows/
     └── build-desktop.yml          # CI: build Electron packages for Windows & macOS
@@ -150,5 +173,5 @@ On first launch you'll be presented with a login page — enter your Soulseek cr
 
 ## License
 
-This project wraps [slsk-batchdl](https://github.com/fiso64/slsk-batchdl) which is GPL-3.0 licensed.
+This project wraps [slsk-batchdl](https://github.com/fiso64/slsk-batchdl) which is AGPL-3.0 licensed.
 
