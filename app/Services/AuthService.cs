@@ -25,18 +25,7 @@ public class AuthService
         await _loginSemaphore.WaitAsync();
         try
         {
-            var connectionOptions = new ConnectionOptions(
-                connectTimeout: 20000,
-                configureSocket: socket =>
-                {
-                    socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-                });
-
-            var clientOptions = new SoulseekClientOptions(
-                serverConnectionOptions: connectionOptions,
-                enableListener: false);
-
-            using var client = new SoulseekClient(clientOptions);
+            using var client = new SoulseekClient();
 
             try
             {

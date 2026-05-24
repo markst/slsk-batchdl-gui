@@ -25,7 +25,6 @@ public static class BuildDefaults
   </Target>
 
   <ItemGroup>
-    <ProjectReference Include="../sldl/slsk-batchdl/slsk-batchdl.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +33,7 @@ public static class BuildDefaults
     <PackageReference Include="NLayer.NAudioSupport" Version="1.4.0" />
     <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
     <PackageReference Include="ElectronNET.API" Version="23.6.2" />
+    <PackageReference Include="Soulseek" Version="0.23.1" />
   </ItemGroup>
 
 </Project>

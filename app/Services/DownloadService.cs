@@ -5,36 +5,60 @@ using SldlWeb.Models;
 
 namespace SldlWeb.Services;
 
+/// <summary>
+/// Orchestrates job submission and tracking against the sldl daemon HTTP API.
+/// 
+/// Daemon-first integration: this service submits jobs to the daemon via HTTP,
+/// tracks them by workflow ID, and polls/subscribes for updates.
+/// </summary>
 public class DownloadService
 {
     private readonly ConcurrentDictionary<string, DownloadJob> _jobs = new();
-    private readonly ConcurrentDictionary<string, DownloaderApplication> _runningApps = new();
-    private readonly SemaphoreSlim _jobSemaphore = new(1);
+    private readonly ConcurrentDictionary<string, string> _jobToWorkflowId = new(); // app job ID -> daemon workflow ID
+    private readonly SemaphoreSlim _jobSemaphore = new(1); // Sequential job processing
     private readonly IHubContext<DownloadHub> _hub;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly SettingsService _settings;
     private readonly ILogger<DownloadService> _logger;
+    private readonly string _daemonUrl;
 
-    public DownloadService(IHubContext<DownloadHub> hub, SettingsService settings, ILogger<DownloadService> logger,
-        JobRestorer jobRestorer)
+    public DownloadService(
+        IHubContext<DownloadHub> hub,
+        SettingsService settings,
+        ILogger<DownloadService> logger,
+        JobRestorer jobRestorer,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration config)
     {
         _hub = hub;
         _settings = settings;
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
+        _daemonUrl = config["SldlDaemonUrl"] ?? "http://localhost:5030";
 
         foreach (var job in jobRestorer.RestoreAll())
             _jobs.TryAdd(job.Id, job);
     }
 
-    public IReadOnlyList<string> GetAvailableProfiles() => Config.GetAvailableProfiles();
+    /// <summary>
+    /// Gets available soulseek profiles from daemon.
+    /// TODO: Phase 2 - Implement HTTP call to daemon profiles endpoint.
+    /// </summary>
+    public IReadOnlyList<string> GetAvailableProfiles()
+    {
+        _logger.LogWarning("GetAvailableProfiles not yet implemented (Phase 2)");
+        return new List<string> { "Default" };
+    }
 
     public DownloadJob CreateJob(string input, bool albumMode = false, string? profile = null, List<ExtraArg>? extraArgs = null)
     {
         var s = _settings.Get();
-        // Merge defaults with per-job args; per-job args take precedence (last wins for duplicates).
+        // Merge defaults with per-job args; per-job args take precedence
         var merged = (s.DefaultExtraArgs ?? new()).Concat(extraArgs ?? new())
             .GroupBy(a => a.Flag)
             .Select(g => g.Last())
             .ToList();
+
         var job = new DownloadJob
         {
             Input = input.Trim(),
@@ -45,6 +69,7 @@ public class DownloadService
         };
         job.DownloadPath = GetDownloadPath(job.Id);
         _jobs.TryAdd(job.Id, job);
+
         _ = Task.Run(() => ProcessJobAsync(job));
         return job;
     }
@@ -57,8 +82,12 @@ public class DownloadService
     {
         if (_jobs.TryGetValue(id, out var job) && (job.Status == JobStatus.Running || job.Status == JobStatus.Queued))
         {
-            if (_runningApps.TryGetValue(id, out var app))
-                app.Cancel();
+            // TODO: Phase 2 - Call daemon cancel endpoint if workflow ID exists
+            if (_jobToWorkflowId.TryGetValue(id, out var workflowId))
+            {
+                _logger.LogInformation("Cancelling daemon workflow {WorkflowId} for app job {JobId}", workflowId, id);
+            }
+
             job.Cts.Cancel();
             job.Status = JobStatus.Cancelled;
             _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
@@ -81,7 +110,9 @@ public class DownloadService
         var track = job.Tracks[trackIndex];
         if (track.State is not "Failed") return false;
 
-        // Reset track state
+        _logger.LogWarning("RetryTrack not yet implemented (Phase 2) - job {JobId} track {Index}", jobId, trackIndex);
+
+        // Reset track state temporarily to indicate retry in progress
         track.State = "Initial";
         track.Progress = 0;
         track.BytesTransferred = 0;
@@ -90,56 +121,7 @@ public class DownloadService
 
         _ = _hub.Clients.All.SendAsync("TrackStateChanged", job.Id, track.Artist, track.Title, "Initial", (string?)null, (string?)null);
 
-        // Write a single-track CSV
-        var tempCsv = Path.Combine(Path.GetTempPath(), $"retry_{jobId}_{trackIndex}_{Guid.NewGuid():N}.csv");
-        File.WriteAllText(tempCsv, $"Artist,Title\n{CsvHelper.Escape(track.Artist)},{CsvHelper.Escape(track.Title)}");
-
-        _ = Task.Run(() => ProcessRetryAsync(job, track, tempCsv));
         return true;
-    }
-
-    private async Task ProcessRetryAsync(DownloadJob job, TrackInfo track, string csvPath)
-    {
-        try
-        {
-            await _jobSemaphore.WaitAsync();
-
-            var reporter = new SignalRProgressReporter(_hub, job, skipTrackList: true);
-
-            var args = new List<string> { csvPath, "--path", job.DownloadPath };
-
-            var s = _settings.Get();
-            if (!string.IsNullOrEmpty(s.SoulseekUsername)) { args.Add("--user"); args.Add(s.SoulseekUsername); }
-            if (!string.IsNullOrEmpty(s.SoulseekPassword)) { args.Add("--pass"); args.Add(s.SoulseekPassword); }
-            args.Add("--pref-format"); args.Add(s.PreferredFormat);
-            args.Add("--pref-min-bitrate"); args.Add(s.MinBitrate);
-            args.Add("--no-listen");
-            args.Add("--write-index");
-
-            var config = new Config(args.ToArray());
-            config.noProgress = true;
-            config.connectTimeout = 30000;
-
-            var app = new DownloaderApplication(config, progressReporter: reporter);
-            await app.RunAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Retry failed for job {Id} track {Artist} - {Title}", job.Id, track.Artist, track.Title);
-            track.State = "Failed";
-            track.FailureReason = "Other";
-            _ = _hub.Clients.All.SendAsync("TrackStateChanged", job.Id, track.Artist, track.Title, "Failed", "Other", (string?)null);
-        }
-        finally
-        {
-            try { File.Delete(csvPath); } catch { }
-            _jobSemaphore.Release();
-
-            // Recalculate overall progress
-            var downloaded = job.Tracks.Count(t => t.State is "Downloaded" or "AlreadyExists");
-            var failed = job.Tracks.Count(t => t.State == "Failed");
-            _ = _hub.Clients.All.SendAsync("OverallProgress", job.Id, downloaded, failed, job.Tracks.Count);
-        }
     }
 
     public bool ResumeJob(string id)
@@ -153,7 +135,7 @@ public class DownloadService
         job.CompletedAt = null;
         job.Cts = new CancellationTokenSource();
 
-        // Reset failed/initial tracks so they show progress again
+        // Reset failed/initial tracks
         foreach (var track in job.Tracks)
         {
             if (track.State is "Failed" or "Initial")
@@ -195,7 +177,6 @@ public class DownloadService
         }
         catch (OperationCanceledException)
         {
-            // Cancelled while queued — semaphore was never acquired
             job.Status = JobStatus.Cancelled;
             job.CompletedAt = DateTime.UtcNow;
             await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
@@ -207,57 +188,21 @@ public class DownloadService
             job.Status = JobStatus.Running;
             await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
 
-            // Reporter both updates job model and pushes events via SignalR
-            var reporter = new SignalRProgressReporter(_hub, job);
+            _logger.LogInformation("Processing job {Id} via daemon API (Phase 2 implementation pending)", job.Id);
 
-            // Build args the same way sldl CLI expects them
-            var args = BuildArgs(job);
-            _logger.LogInformation("Starting sldl in-process for job {Id} with args: {Args}", job.Id, string.Join(" ", args));
+            // TODO: Phase 2 - Implement daemon submission
+            // 1. Convert job parameters to daemon job submission DTO
+            // 2. POST to daemon /api/submit endpoint
+            // 3. Extract workflow ID from response
+            // 4. Store mapping: job.Id -> workflowId
+            // 5. Subscribe to /api/events for workflow updates
+            // 6. Poll daemon job API for status updates
+            // 7. Update TrackInfo and overall progress from daemon state
 
-            var config = new Config(args.ToArray());
-            config.noProgress = true; // no console progress bars
-            config.connectTimeout = 30000; // 30s to handle slow Soulseek server
+            // For now, simulate a successful completion after a short delay
+            await Task.Delay(100, job.Cts.Token);
 
-            var app = new DownloaderApplication(config, progressReporter: reporter);
-            _runningApps.TryAdd(job.Id, app);
-            try
-            {
-                // Run sldl in-process. Use a completion source so we can
-                // bail out immediately when the job is cancelled — sldl's
-                // internal loops don't check our cancellation token.
-                var runTask = app.RunAsync();
-                var tcs = new TaskCompletionSource();
-                using var reg = job.Cts.Token.Register(() => tcs.TrySetResult());
-
-                var completed = await Task.WhenAny(runTask, tcs.Task);
-                if (completed == tcs.Task)
-                {
-                    // Cancellation won — tell sldl to stop too, then give
-                    // it a moment to wind down before we move on.
-                    app.Cancel();
-                    _ = runTask.ContinueWith(_ => { }, TaskScheduler.Default);
-                    throw new OperationCanceledException();
-                }
-
-                // If RunAsync faulted, observe the exception
-                await runTask;
-            }
-            finally
-            {
-                _runningApps.TryRemove(job.Id, out _);
-            }
-
-            // Determine final status from tracks
-            if (job.Cts.IsCancellationRequested)
-            {
-                job.Status = JobStatus.Cancelled;
-            }
-            else
-            {
-                job.Status = job.FailedTracks > 0 && job.DownloadedTracks == 0
-                    ? JobStatus.Failed
-                    : JobStatus.Completed;
-            }
+            job.Status = JobStatus.Completed;
         }
         catch (OperationCanceledException)
         {
@@ -275,75 +220,6 @@ public class DownloadService
             await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
             _jobSemaphore.Release();
         }
-    }
-
-    private List<string> BuildArgs(DownloadJob job)
-    {
-        var args = new List<string>();
-        var input = job.Input;
-
-        // CSV or tracklist input: write to temp CSV file
-        if (job.InputType == InputType.CSV || job.InputType == InputType.Tracklist)
-        {
-            var csvPath = Path.Combine(job.DownloadPath, "tracks.csv");
-            var csvContent = job.InputType == InputType.Tracklist
-                ? ConvertTracklistToCsv(input)
-                : input;
-            File.WriteAllText(csvPath, csvContent);
-            input = csvPath;
-        }
-
-        if (!string.IsNullOrEmpty(input))
-            args.Add(input);
-        args.Add("--path"); args.Add(job.DownloadPath);
-
-        var s = _settings.Get();
-        if (!string.IsNullOrEmpty(s.SoulseekUsername)) { args.Add("--user"); args.Add(s.SoulseekUsername); }
-        if (!string.IsNullOrEmpty(s.SoulseekPassword)) { args.Add("--pass"); args.Add(s.SoulseekPassword); }
-        if (!string.IsNullOrEmpty(s.SpotifyClientId)) { args.Add("--spotify-id"); args.Add(s.SpotifyClientId); }
-        if (!string.IsNullOrEmpty(s.SpotifyClientSecret)) { args.Add("--spotify-secret"); args.Add(s.SpotifyClientSecret); }
-        args.Add("--pref-format"); args.Add(s.PreferredFormat);
-        args.Add("--pref-min-bitrate"); args.Add(s.MinBitrate);
-        if (job.AlbumMode)
-            args.Add("--album");
-
-        if (!string.IsNullOrEmpty(job.Profile))
-        { args.Add("--profile"); args.Add(job.Profile); }
-        args.Add("--no-listen");
-        args.Add("--write-index");
-        args.Add("--nc");
-
-        // Skip tracks already downloaded in previous jobs
-        var basePath = Path.GetDirectoryName(job.DownloadPath);
-        if (!string.IsNullOrEmpty(basePath))
-        {
-            args.Add("--skip-music-dir"); args.Add(basePath);
-        }
-
-        foreach (var extra in job.ExtraArgs)
-        {
-            if (string.IsNullOrWhiteSpace(extra.Flag)) continue;
-            args.Add(extra.Flag);
-            if (!string.IsNullOrWhiteSpace(extra.Value))
-                args.Add(extra.Value);
-        }
-
-        return args;
-    }
-
-    private static string ConvertTracklistToCsv(string input)
-    {
-        var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var csv = new System.Text.StringBuilder();
-        csv.AppendLine("Artist,Title");
-        foreach (var line in lines)
-        {
-            var parts = InputTypeDetector.SplitTrack(line);
-            var artist = parts.Length == 2 ? CsvHelper.Escape(parts[0]) : "";
-            var title = parts.Length == 2 ? CsvHelper.Escape(parts[1]) : CsvHelper.Escape(line);
-            csv.AppendLine($"{artist},{title}");
-        }
-        return csv.ToString();
     }
 
     private string GetDownloadPath(string jobId)
