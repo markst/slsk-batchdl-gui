@@ -487,17 +487,19 @@ a:hover { text-decoration: underline; }
 }
 
 /* State-based row styling */
-.state-downloaded .track-title,
+.state-done .track-title,
 .state-alreadyexists .track-title { color: #6ee7b7; }
 .state-failed .track-title { color: #f87171; }
 .state-downloading .track-title { color: #fbbf24; }
 .state-searching .track-title { color: #93c5fd; }
+.state-awaitingselection .track-title { color: #c4b5fd; }
 
-.state-downloaded .state-label { color: #6ee7b7; }
+.state-done .state-label { color: #6ee7b7; }
 .state-alreadyexists .state-label { color: #6ee7b7; }
 .state-failed .state-label { color: #f87171; }
 .state-found .state-label { color: #93c5fd; }
 .state-searching .state-label { color: #93c5fd; }
+.state-awaitingselection .state-label { color: #c4b5fd; }
 
 /* ===== Play Button ===== */
 .btn-play {

@@ -51,7 +51,6 @@ public class KnownArg
         new() { Flag = "--artist-maybe-wrong",  Label = "Artist Maybe Wrong",           Type = "flag" },
         new() { Flag = "--strict-title",        Label = "Strict Title Match",           Type = "flag" },
         new() { Flag = "--strict-artist",       Label = "Strict Artist Match",          Type = "flag" },
-        new() { Flag = "--concurrent-downloads",Label = "Concurrent Downloads",         Type = "number", Placeholder = "2" },
         new() { Flag = "--number",              Label = "Max Tracks",                   Type = "number", Placeholder = "50" },
         new() { Flag = "--offset",              Label = "Track Offset (skip n)",        Type = "number", Placeholder = "0" },
         new() { Flag = "--search-timeout",      Label = "Search Timeout (ms)",          Type = "number", Placeholder = "6000" },
@@ -79,7 +78,7 @@ public class DownloadJob
     public List<ExtraArg> ExtraArgs { get; set; } = new();
 
     public int TotalTracks => Tracks.Count;
-    public int DownloadedTracks => Tracks.Count(t => t.State is "Downloaded" or "AlreadyExists");
+    public int DownloadedTracks => Tracks.Count(t => t.State is "Done" or "AlreadyExists");
     public int FailedTracks => Tracks.Count(t => t.State == "Failed");
 }
 

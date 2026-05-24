@@ -84,7 +84,7 @@ else
             {
                 @foreach (var album in AlbumGroups())
                 {
-                    var done = album.Count(t => t.State is "Downloaded" or "AlreadyExists");
+                    var done = album.Count(t => t.State is "Done" or "AlreadyExists");
                     var failed = album.Count(t => t.State == "Failed");
                     var total = album.Count();
                     var albumPct = total > 0 ? Math.Round((double)done / total * 100, 1) : 0;
@@ -356,7 +356,7 @@ else
     private int? playingIndex;
 
     private static bool IsPlayable(TrackInfo track) =>
-        (track.State is "Downloaded" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
+        (track.State is "Done" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
 
     private void Play(int idx)
     {
@@ -389,8 +389,9 @@ else
         "Searching" => "Searching...",
         "Found" => "Found",
         "Downloading" => "Downloading...",
-        "Downloaded" => "Done",
+        "Done" => "Done",
         "AlreadyExists" => "Exists",
+        "AwaitingSelection" => "Awaiting selection",
         "Failed" => track.FailureReason ?? "Failed",
         _ => track.State
     };
