@@ -52,7 +52,7 @@ public class JobRestorer
         foreach (var indexFile in Directory.GetFiles(dir, "_index.csv", SearchOption.AllDirectories))
         {
             var indexDir = Path.GetDirectoryName(indexFile)!;
-            indexResults.AddRange(ParseIndexEntries(indexFile, indexDir));
+            indexResults.AddRange(ParseIndexEntries(indexFile, indexDir, _logger));
         }
 
         List<TrackInfo> tracks;
@@ -70,7 +70,7 @@ public class JobRestorer
             tracks = indexResults.Select(e => e.ToTrackInfo()).ToList();
         }
 
-        var downloaded = tracks.Count(t => t.State is "Downloaded" or "AlreadyExists");
+        var downloaded = tracks.Count(t => t.State is "Done" or "AlreadyExists");
         var failed = tracks.Count(t => t.State == "Failed");
         var status = tracks.Count == 0 ? JobStatus.Completed
             : failed > 0 && downloaded == 0 ? JobStatus.Failed
@@ -133,7 +133,7 @@ public class JobRestorer
 
     private static readonly Dictionary<int, string> _stateMap = new()
     {
-        [1] = "Downloaded",
+        [1] = "Done",          // was "Downloaded" in old persisted files
         [2] = "Failed",
         [3] = "AlreadyExists",
         [4] = "Failed",
@@ -148,7 +148,7 @@ public class JobRestorer
         [5] = "Other",
     };
 
-    private static List<IndexEntry> ParseIndexEntries(string indexPath, string baseDir)
+    private static List<IndexEntry> ParseIndexEntries(string indexPath, string baseDir, ILogger logger)
     {
         var entries = new List<IndexEntry>();
         var lines = File.ReadAllLines(indexPath);
@@ -168,7 +168,9 @@ public class JobRestorer
             _ = int.TryParse(fields[6], out var stateInt);
             _ = int.TryParse(fields[7], out var failureInt);
 
-            var state = _stateMap.GetValueOrDefault(stateInt, "Initial");
+            var state = _stateMap.TryGetValue(stateInt, out var mapped) ? mapped : "Initial";
+            if (stateInt != 0 && !_stateMap.ContainsKey(stateInt))
+                logger.LogWarning("Unknown state index {StateInt} in {IndexPath}; defaulting to Initial", stateInt, indexPath);
             var failureReason = _failureMap.GetValueOrDefault(failureInt);
 
             string? downloadPath = null;
