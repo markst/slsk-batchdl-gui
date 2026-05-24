@@ -69,46 +69,6 @@
     </div>
 
     <div class="settings-group">
-        <h3>File Sharing</h3>
-        <div class="settings-field">
-            <label>
-                <input type="checkbox" @bind="model.EnableSharing" />
-                Enable file sharing
-            </label>
-        </div>
-        @if (model.EnableSharing)
-        {
-            <div class="settings-field">
-                <label for="share-port">Listen Port</label>
-                <input id="share-port" type="number" @bind="model.SharingListenPort" placeholder="50000" />
-            </div>
-            <div class="settings-field">
-                <label for="user-desc">User Description</label>
-                <input id="user-desc" type="text" @bind="model.UserDescription" placeholder="sldl-web" />
-            </div>
-            <div class="settings-field">
-                <label>Shared Directories</label>
-                @if (model.SharedDirectories.Any())
-                {
-                    <div class="shared-dirs-list">
-                        @for (int i = 0; i < model.SharedDirectories.Count; i++)
-                        {
-                            var idx = i;
-                            <div class="shared-dir-row">
-                                <span class="shared-dir-path">@model.SharedDirectories[idx]</span>
-                                <button class="btn-remove-arg" @onclick="() => RemoveSharedDir(idx)" title="Remove">×</button>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="shared-dir-add-row">
-                    <button class="btn-browse" @onclick="BrowseSharedDir">Browse…</button>
-                </div>
-            </div>
-        }
-    </div>
-
-    <div class="settings-group">
         <h3>Default Extra Arguments <span class="muted">(applied to every download)</span></h3>
         @if (model.DefaultExtraArgs.Any())
         {
@@ -202,30 +162,6 @@
             model.DownloadPath = result[0];
             await InvokeAsync(StateHasChanged);
         }
-    }
-
-    private async Task BrowseSharedDir()
-    {
-        if (!HybridSupport.IsElectronActive) return;
-        var mainWindow = Electron.WindowManager.BrowserWindows.First();
-        var result = await Electron.Dialog.ShowOpenDialogAsync(mainWindow, new OpenDialogOptions
-        {
-            Title = "Select Shared Directory",
-            Properties = new[] { OpenDialogProperty.openDirectory }
-        });
-        if (result?.Length > 0)
-        {
-            var dir = result[0];
-            if (!model.SharedDirectories.Contains(dir))
-                model.SharedDirectories.Add(dir);
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    private void RemoveSharedDir(int index)
-    {
-        if (index >= 0 && index < model.SharedDirectories.Count)
-            model.SharedDirectories.RemoveAt(index);
     }
 
     private void Save()
