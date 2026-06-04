@@ -51,6 +51,11 @@ public class AuthService
                 _logger.LogWarning("Soulseek login network error for {User}: {Message}", username, ex.Message);
                 return (false, "Network error. Check your internet connection.");
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected Soulseek login error for {User}", username);
+                return (false, "Unexpected error. Please try again.");
+            }
 
             // Save credentials
             var s = _settings.Get();
