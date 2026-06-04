@@ -37,20 +37,23 @@
     protected override void OnInitialized()
     {
         AuthService.OnAuthStateChanged += HandleAuthChanged;
+        // If already logged in (e.g. Blazor circuit reconnect), show content immediately.
+        if (AuthService.IsLoggedIn)
+            autoLoginChecked = true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
 
-        if (!AuthService.IsLoggedIn)
+        if (AuthService.IsLoggedIn)
+            return; // already set autoLoginChecked = true in OnInitialized
+
+        var success = await AuthService.TryAutoLoginAsync();
+        if (!success)
         {
-            var success = await AuthService.TryAutoLoginAsync();
-            if (!success)
-            {
-                Nav.NavigateTo("/login", replace: true);
-                return;
-            }
+            Nav.NavigateTo("/login", replace: true);
+            return;
         }
 
         autoLoginChecked = true;
@@ -61,17 +64,22 @@
     {
         _ = InvokeAsync(() =>
         {
-            if (!AuthService.IsLoggedIn)
+            try
             {
-                Nav.NavigateTo("/login", replace: true);
+                if (!AuthService.IsLoggedIn)
+                    Nav.NavigateTo("/login", replace: true);
+                StateHasChanged();
             }
-            StateHasChanged();
+            catch { /* ignore navigation/render exceptions during circuit teardown */ }
         });
     }
 
     private void HandleLogout()
     {
         AuthService.Logout();
+        // Navigate directly rather than relying solely on the event chain,
+        // which can fail silently if the circuit is in a bad state.
+        Nav.NavigateTo("/login", replace: true);
     }
 
     public void Dispose()
