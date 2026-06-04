@@ -36,7 +36,8 @@ The UI connects to a running **sldl daemon** over HTTP REST + SignalR, so the da
                     └─────────────────────────────┘
 ```
 
-- The sldl daemon runs as a separate process (`slsk-batchdl --server`) and exposes an HTTP REST API at `http://localhost:5030` (configurable via `SldlDaemonUrl` in `appsettings.json`)
+- **`DaemonLauncherService`** auto-starts the sldl daemon on app launch (bundled binary at `bin/sldl`, or the submodule build output in dev) and kills it on exit — users never need to start it manually
+- The daemon exposes an HTTP REST API at `http://localhost:5030` (configurable via `SldlDaemonUrl` in `appsettings.json`)
 - **`DownloadService`** submits jobs to the daemon via `POST api/jobs/extract|downloads/song|downloads/album` and polls `GET api/workflows/{id}` as a fallback
 - **`SldlEventBridge`** subscribes to the daemon's SignalR hub at `/api/events` (`serverEvent` method) and pushes live `song.state-changed`, `download.progress`, and `workflow.upserted` events to the browser
 - **Electron.NET** wraps the Blazor Server app in an Electron window for a native desktop experience
@@ -51,7 +52,6 @@ Pre-built binaries for macOS and Windows are available on the [Releases](../../r
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js 20+](https://nodejs.org/)
 - A Soulseek account (create one at https://www.slsknet.org/)
-- A running sldl daemon (see [sldl server docs](sldl/README.md))
 - (Optional) Spotify API credentials for playlist URL support
 
 ### 1. Clone with submodules
@@ -110,7 +110,6 @@ Built packages are written to `app/obj/desktop/{osx,win}/dist/`.
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- A running sldl daemon (`slsk-batchdl --server`, default port 5030)
 - A Soulseek account (create one at https://www.slsknet.org/)
 
 ### Configure the daemon URL (optional)
@@ -162,6 +161,7 @@ On first launch you'll be presented with a login page — enter your Soulseek cr
 │   │   └── SldlEventEnvelope.cs   # Local envelope for daemon SignalR events
 │   ├── Services/
 │   │   ├── AuthService.cs         # Soulseek login validation + auth state
+│   │   ├── DaemonLauncherService.cs # Auto-starts/stops the sldl daemon process
 │   │   ├── DownloadService.cs     # Job management, calls sldl daemon via HTTP
 │   │   ├── SldlEventBridge.cs     # Subscribes to daemon SignalR event hub
 │   │   ├── JobRestorer.cs         # Restores persisted jobs from disk on startup
