@@ -1,5 +1,5 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Sldl.Api;
 using SldlWeb.Models;
 
@@ -17,8 +17,6 @@ public sealed class SldlEventBridge : BackgroundService
     private readonly DownloadService _downloadService;
     private readonly IConfiguration _config;
     private readonly ILogger<SldlEventBridge> _logger;
-
-    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
     public SldlEventBridge(
         DownloadService downloadService,
@@ -39,10 +37,16 @@ public sealed class SldlEventBridge : BackgroundService
         {
             var connection = new HubConnectionBuilder()
                 .WithUrl(hubUrl)
+                .AddJsonProtocol(options =>
+                {
+                    options.PayloadSerializerOptions.PropertyNameCaseInsensitive = true;
+                    SldlApiJson.ConfigureSerializerOptions(options.PayloadSerializerOptions);
+                })
                 .WithAutomaticReconnect(new ExponentialBackoff())
                 .Build();
 
-            connection.On<SldlEventEnvelope>("serverEvent", envelope => HandleEvent(envelope));
+            connection.On<ServerEventEnvelopeDto>("serverEvent",
+                envelope => HandleEvent(ServerEventPayloadConverter.RehydrateEnvelope(envelope)));
 
             connection.Closed += ex =>
             {
@@ -56,16 +60,22 @@ public sealed class SldlEventBridge : BackgroundService
                 return Task.CompletedTask;
             };
 
-            connection.Reconnected += id =>
+            connection.Reconnected += async id =>
             {
-                _logger.LogInformation("Event hub reconnected (connection {Id})", id);
-                return Task.CompletedTask;
+                _logger.LogInformation("Event hub reconnected (connection {Id}); resubscribing", id);
+                try { await connection.InvokeAsync("SubscribeAll"); }
+                catch (Exception ex) { _logger.LogWarning(ex, "SubscribeAll failed after reconnect"); }
             };
 
             try
             {
                 await connection.StartAsync(stoppingToken);
                 _logger.LogInformation("Connected to daemon event hub at {Url}", hubUrl);
+
+                // Subscribe to all workflows so the daemon sends us events.
+                // Without this the hub sends nothing (opt-in subscription model).
+                await connection.InvokeAsync("SubscribeAll", stoppingToken);
+                _logger.LogInformation("Subscribed to all daemon events");
 
                 // Keep running until cancellation or a fatal disconnect
                 await AwaitDisconnectAsync(connection, stoppingToken);
@@ -99,12 +109,19 @@ public sealed class SldlEventBridge : BackgroundService
         await tcs.Task;
     }
 
-    private void HandleEvent(SldlEventEnvelope envelope)
+    private void HandleEvent(ServerEventEnvelopeDto envelope)
     {
         try
         {
+            // Temporary: log all events at Info level to diagnose routing issues.
+            _logger.LogInformation("Event: {Type}  wf={WfId}", envelope.Type, envelope.WorkflowId);
+
             switch (envelope.Type)
             {
+                case "song.searching":
+                    HandleSongSearching(envelope);
+                    break;
+
                 case "song.state-changed":
                     HandleSongStateChanged(envelope);
                     break;
@@ -135,26 +152,72 @@ public sealed class SldlEventBridge : BackgroundService
         }
     }
 
-    private void HandleSongStateChanged(SldlEventEnvelope envelope)
+    private void HandleSongSearching(ServerEventEnvelopeDto envelope)
     {
-        var payload = envelope.Payload.Deserialize<SongStateChangedEventDto>(_json);
-        if (payload is null) return;
+        if (envelope.Payload is not SongSearchingEventDto payload) return;
 
-        var workflowId = payload.WorkflowId;
+        var workflowId = payload.WorkflowId != Guid.Empty ? payload.WorkflowId
+            : envelope.WorkflowId ?? Guid.Empty;
         var jobId = _downloadService.GetJobIdForWorkflow(workflowId);
         if (jobId is null)
         {
-            _logger.LogDebug("Ignoring song.state-changed for untracked workflow {WorkflowId}", workflowId);
+            _logger.LogWarning("song.searching: untracked workflow {WorkflowId} (envelope={EnvWf})",
+                payload.WorkflowId, envelope.WorkflowId);
             return;
+        }
+
+        var track = TrackLabel(payload.Query);
+        _logger.LogInformation("[{JobId}] Searching  {Track}", jobId, track);
+
+        _downloadService.EnsureTrack(jobId, payload.Query);
+    }
+
+    private void HandleSongStateChanged(ServerEventEnvelopeDto envelope)
+    {
+        if (envelope.Payload is not SongStateChangedEventDto payload) return;
+
+        var workflowId = payload.WorkflowId;
+        // Fall back to envelope-level WorkflowId if payload's is empty
+        if (workflowId == Guid.Empty) workflowId = envelope.WorkflowId ?? Guid.Empty;
+        var jobId = _downloadService.GetJobIdForWorkflow(workflowId);
+        if (jobId is null)
+        {
+            _logger.LogWarning("song.state-changed: untracked workflow {WorkflowId} (envelope={EnvWf})",
+                payload.WorkflowId, envelope.WorkflowId);
+            return;
+        }
+
+        var track = TrackLabel(payload.Query);
+        switch (payload.State)
+        {
+            case ServerJobState.Downloading:
+                var user = payload.ChosenCandidate?.Username ?? "?";
+                var file = payload.ChosenCandidate is { } c ? System.IO.Path.GetFileName(c.Filename) : null;
+                _logger.LogInformation("[{JobId}] Downloading {Track}  ←  {User}/{File}",
+                    jobId, track, user, file ?? "");
+                break;
+            case ServerJobState.Done:
+                _logger.LogInformation("[{JobId}] Done       {Track}  →  {Path}",
+                    jobId, track, payload.DownloadPath ?? "");
+                break;
+            case ServerJobState.AlreadyExists:
+                _logger.LogInformation("[{JobId}] Exists     {Track}", jobId, track);
+                break;
+            case ServerJobState.Failed:
+                _logger.LogWarning("[{JobId}] Failed     {Track}  ({Reason})",
+                    jobId, track, payload.FailureReason?.ToString() ?? "unknown");
+                break;
+            case ServerJobState.Skipped:
+                _logger.LogInformation("[{JobId}] Skipped    {Track}", jobId, track);
+                break;
         }
 
         _downloadService.UpdateTrackFromEvent(jobId, payload);
     }
 
-    private void HandleDownloadProgress(SldlEventEnvelope envelope)
+    private void HandleDownloadProgress(ServerEventEnvelopeDto envelope)
     {
-        var payload = envelope.Payload.Deserialize<DownloadProgressEventDto>(_json);
-        if (payload is null) return;
+        if (envelope.Payload is not DownloadProgressEventDto payload) return;
 
         var jobId = _downloadService.GetJobIdForWorkflow(payload.WorkflowId);
         if (jobId is null) return;
@@ -162,23 +225,26 @@ public sealed class SldlEventBridge : BackgroundService
         _downloadService.UpdateTrackProgress(jobId, payload.JobId, payload.BytesTransferred, payload.TotalBytes);
     }
 
-    private void HandleWorkflowUpserted(SldlEventEnvelope envelope)
+    private void HandleWorkflowUpserted(ServerEventEnvelopeDto envelope)
     {
-        var payload = envelope.Payload.Deserialize<WorkflowSummaryDto>(_json);
-        if (payload is null) return;
+        if (envelope.Payload is not WorkflowSummaryDto payload) return;
 
         var jobId = _downloadService.GetJobIdForWorkflow(payload.WorkflowId);
         if (jobId is null) return;
 
+        if (payload.State is ServerWorkflowState.Completed)
+            _logger.LogInformation("[{JobId}] Job completed", jobId);
+        else if (payload.State is ServerWorkflowState.Failed)
+            _logger.LogWarning("[{JobId}] Job failed", jobId);
+
         _downloadService.HandleWorkflowUpserted(jobId, payload.State);
     }
 
-    private void HandleJobUpserted(SldlEventEnvelope envelope)
+    private void HandleJobUpserted(ServerEventEnvelopeDto envelope)
     {
         if (!envelope.SnapshotInvalidation) return;
 
-        var payload = envelope.Payload.Deserialize<JobSummaryDto>(_json);
-        if (payload is null) return;
+        if (envelope.Payload is not JobSummaryDto payload) return;
 
         // If this is a song job in a terminal state and we don't have a state-changed event yet,
         // treat it as a state update so nothing gets stuck.
@@ -200,8 +266,17 @@ public sealed class SldlEventBridge : BackgroundService
                 DiscoveryLockedFileCount: payload.DiscoveryLockedFileCount,
                 FailureMessage: payload.FailureMessage);
 
-            _downloadService.UpdateTrackFromEvent(jobId, fakeEvent);
+            _downloadService.UpdateTrackFromEvent(jobId, fakeEvent, createIfMissing: false);
         }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private static string TrackLabel(SongQueryDto q)
+    {
+        if (!string.IsNullOrEmpty(q.Artist) && !string.IsNullOrEmpty(q.Title))
+            return $"{q.Artist} – {q.Title}";
+        return q.Title ?? q.Artist ?? "(unknown)";
     }
 
     // ── Reconnect policy ───────────────────────────────────────────────────

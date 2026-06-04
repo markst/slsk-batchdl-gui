@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net.Http.Json;
-using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Sldl.Api;
 using SldlWeb.Hubs;
@@ -22,50 +20,40 @@ public class DownloadService
     private readonly ConcurrentDictionary<Guid, string> _workflowToJob = new();
     private readonly SemaphoreSlim _jobSemaphore = new(1);
     private readonly IHubContext<DownloadHub> _hub;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly SldlApiClient _sldl;
     private readonly SettingsService _settings;
     private readonly ILogger<DownloadService> _logger;
-    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
     public DownloadService(
         IHubContext<DownloadHub> hub,
         SettingsService settings,
         ILogger<DownloadService> logger,
         JobRestorer jobRestorer,
-        IHttpClientFactory httpClientFactory)
+        SldlApiClient sldl)
     {
         _hub = hub;
         _settings = settings;
         _logger = logger;
-        _httpClientFactory = httpClientFactory;
+        _sldl = sldl;
 
         foreach (var job in jobRestorer.RestoreAll())
             _jobs.TryAdd(job.Id, job);
     }
 
-    private HttpClient Http => _httpClientFactory.CreateClient("SldlDaemon");
-
-    // ── Public API ─────────────────────────────────────────────────────────
+    // ── Public API ────────────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<string>> GetAvailableProfilesAsync(CancellationToken ct = default)
     {
         try
         {
-            var profiles = await Http.GetFromJsonAsync<List<ProfileSummaryDto>>("api/profiles", _json, ct);
-            return profiles?.Select(p => p.Name).ToList() ?? [];
+            var profiles = await _sldl.GetProfilesAsync(ct);
+            return profiles.Select(p => p.Name).ToList();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not fetch profiles from daemon; returning empty list");
             return [];
         }
-    }
-
-    // Synchronous overload kept for backward compatibility with Razor component callsites.
-    public IReadOnlyList<string> GetAvailableProfiles()
-    {
-        try { return GetAvailableProfilesAsync().GetAwaiter().GetResult(); }
-        catch { return []; }
     }
 
     public DownloadJob CreateJob(string input, bool albumMode = false, string? profile = null, List<ExtraArg>? extraArgs = null)
@@ -192,18 +180,50 @@ public class DownloadService
     // ── Event bridge integration ────────────────────────────────────────────
 
     /// <summary>
-    /// Called by SldlEventBridge when a song.state-changed event arrives for a tracked workflow.
+    /// Called by SldlEventBridge when a song.searching event arrives.
+    /// Ensures the track exists in the job list immediately (before any state-change events).
     /// </summary>
-    public void UpdateTrackFromEvent(string jobId, SongStateChangedEventDto payload)
+    public void EnsureTrack(string jobId, SongQueryDto query)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return;
 
+        var exists = job.Tracks.Any(t =>
+            string.Equals(t.Title, query.Title, StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrEmpty(query.Artist) || string.IsNullOrEmpty(t.Artist) ||
+             string.Equals(t.Artist, query.Artist, StringComparison.OrdinalIgnoreCase)));
+
+        if (!exists)
+        {
+            job.Tracks.Add(new TrackInfo
+            {
+                Artist = query.Artist ?? "",
+                Title = query.Title ?? "",
+                Album = query.Album ?? "",
+                State = "Searching"
+            });
+            RecalculateOverallProgress(job);
+            _ = _hub.Clients.All.SendAsync("TrackList", job.Id, job.Tracks.ToList());
+        }
+    }
+
+    /// <summary>
+    /// Called by SldlEventBridge when a song.state-changed event arrives for a tracked workflow.
+    /// </summary>
+    public void UpdateTrackFromEvent(string jobId, SongStateChangedEventDto payload, bool createIfMissing = true)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job)) return;
+
+        // Match on title; also require artist match only when both sides are non-empty
+        // (job.upserted fallback events often carry no artist, which previously caused duplicates).
         var track = job.Tracks.FirstOrDefault(t =>
-            string.Equals(t.Artist, payload.Query.Artist, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(t.Title, payload.Query.Title, StringComparison.OrdinalIgnoreCase));
+            string.Equals(t.Title, payload.Query.Title, StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrEmpty(payload.Query.Artist) ||
+             string.IsNullOrEmpty(t.Artist) ||
+             string.Equals(t.Artist, payload.Query.Artist, StringComparison.OrdinalIgnoreCase)));
 
         if (track is null)
         {
+            if (!createIfMissing) return;
             // New track from daemon — add to job
             track = new TrackInfo
             {
@@ -212,6 +232,14 @@ public class DownloadService
                 Album = payload.Query.Album ?? "",
             };
             job.Tracks.Add(track);
+        }
+        else
+        {
+            // Backfill fields the first event may have omitted
+            if (!string.IsNullOrEmpty(payload.Query.Artist) && string.IsNullOrEmpty(track.Artist))
+                track.Artist = payload.Query.Artist;
+            if (!string.IsNullOrEmpty(payload.Query.Album) && string.IsNullOrEmpty(track.Album))
+                track.Album = payload.Query.Album;
         }
 
         var newState = DaemonStateMapper.ToAppState(payload.State);
@@ -293,7 +321,12 @@ public class DownloadService
             var s = _settings.Get();
             var options = BuildSubmissionOptions(job, workflowId, s);
 
-            JobSummaryDto? summary;
+            // Register BEFORE submitting so song.searching events are routed correctly
+            // even if they fire before the HTTP response returns.
+            _jobToWorkflow[job.Id] = workflowId;
+            _workflowToJob[workflowId] = job.Id;
+
+            JobSummaryDto summary;
             if (job.InputType is InputType.Spotify or InputType.YouTube or InputType.Bandcamp
                                  or InputType.CSV or InputType.Tracklist)
             {
@@ -314,9 +347,19 @@ public class DownloadService
             if (summary is null)
                 throw new InvalidOperationException("Daemon returned no job summary after submission.");
 
-            // Register workflow mapping so the event bridge can route live events
-            _jobToWorkflow[job.Id] = summary.WorkflowId;
-            _workflowToJob[summary.WorkflowId] = job.Id;
+            // Always register the ID the daemon actually assigned.
+            // The daemon may ignore the WorkflowId we provided in SubmissionOptions,
+            // so we must use summary.WorkflowId for event routing.
+            if (summary.WorkflowId != workflowId)
+            {
+                _logger.LogDebug("Daemon assigned workflow {Actual} (requested {Requested})",
+                    summary.WorkflowId, workflowId);
+                // Remove the speculative pre-registration and add the real one
+                _workflowToJob.TryRemove(workflowId, out _);
+                _workflowToJob[summary.WorkflowId] = job.Id;
+                _jobToWorkflow[job.Id] = summary.WorkflowId;
+            }
+
             _logger.LogInformation("Job {AppId} submitted as daemon workflow {WorkflowId}", job.Id, summary.WorkflowId);
 
             // The event bridge will update job.Status when the workflow completes.
@@ -350,7 +393,6 @@ public class DownloadService
             var options = BuildSubmissionOptions(job, workflowId, s);
             var query = new SongQueryDto(Artist: track.Artist, Title: track.Title, Album: track.Album);
             var summary = await SubmitSongAsync(query, options, CancellationToken.None);
-            if (summary is null) return;
 
             // Add secondary workflow mapping (not replacing primary)
             _workflowToJob.TryAdd(summary.WorkflowId, job.Id);
@@ -381,8 +423,7 @@ public class DownloadService
             // Fetch workflow snapshot as fallback if events haven't arrived
             try
             {
-                var wf = await Http.GetFromJsonAsync<WorkflowDetailDto>(
-                    $"api/workflows/{workflowId}", _json, job.Cts.Token);
+                var wf = await _sldl.GetWorkflowAsync(workflowId, job.Cts.Token);
 
                 if (wf is null) continue;
 
@@ -402,42 +443,30 @@ public class DownloadService
 
     // ── Private: HTTP helpers ──────────────────────────────────────────────
 
-    private async Task<JobSummaryDto?> SubmitExtractAsync(string input, SubmissionOptionsDto options, CancellationToken ct)
+    private async Task<JobSummaryDto> SubmitExtractAsync(string input, SubmissionOptionsDto options, CancellationToken ct)
     {
         var body = new SubmitExtractJobRequestDto(input, AutoStartExtractedResult: true, Options: options);
-        return await PostJobAsync("api/jobs/extract", body, ct);
+        return await _sldl.SubmitExtractJobAsync(body, ct);
     }
 
-    private async Task<JobSummaryDto?> SubmitSongAsync(SongQueryDto query, SubmissionOptionsDto options, CancellationToken ct)
+    private async Task<JobSummaryDto> SubmitSongAsync(SongQueryDto query, SubmissionOptionsDto options, CancellationToken ct)
     {
         var body = new SubmitSongJobRequestDto(query, Options: options);
-        return await PostJobAsync("api/jobs/downloads/song", body, ct);
+        return await _sldl.SubmitSongJobAsync(body, ct);
     }
 
-    private async Task<JobSummaryDto?> SubmitAlbumAsync(AlbumQueryDto query, SubmissionOptionsDto options, CancellationToken ct)
+    private async Task<JobSummaryDto> SubmitAlbumAsync(AlbumQueryDto query, SubmissionOptionsDto options, CancellationToken ct)
     {
         var body = new SubmitAlbumJobRequestDto(query, Options: options);
-        return await PostJobAsync("api/jobs/downloads/album", body, ct);
-    }
-
-    private async Task<JobSummaryDto?> PostJobAsync<T>(string url, T body, CancellationToken ct)
-    {
-        using var response = await Http.PostAsJsonAsync(url, body, _json, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            var err = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogError("Daemon rejected job submission at {Url}: {Status} {Body}", url, (int)response.StatusCode, err);
-            return null;
-        }
-        return await response.Content.ReadFromJsonAsync<JobSummaryDto>(_json, ct);
+        return await _sldl.SubmitAlbumJobAsync(body, ct);
     }
 
     private async Task CancelWorkflowAsync(Guid workflowId)
     {
         try
         {
-            using var response = await Http.PostAsync($"api/workflows/{workflowId}/cancel", null);
-            _logger.LogInformation("Cancel workflow {WorkflowId}: {Status}", workflowId, (int)response.StatusCode);
+            var count = await _sldl.CancelWorkflowAsync(workflowId);
+            _logger.LogInformation("Cancel workflow {WorkflowId}: {Count} job(s) cancelled", workflowId, count);
         }
         catch (Exception ex)
         {
