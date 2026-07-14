@@ -439,7 +439,8 @@ public class DownloadService
     private async Task WaitForWorkflowAsync(Guid workflowId, DownloadJob job)
     {
         // Poll until the event bridge updates the job status (or cancellation).
-        // The event bridge is the source of truth; polling is the fallback.
+        // Live updates should prefer workflowUpdateBatch; this HTTP poll is recovery when
+        // batches are late/missing.
         const int PollIntervalMs = 2000;
         while (!job.Cts.IsCancellationRequested)
         {
@@ -454,6 +455,9 @@ public class DownloadService
                 var wf = await _sldl.GetWorkflowAsync(workflowId, includeAll: true, job.Cts.Token);
 
                 if (wf is null) continue;
+
+                // Keep the UI track list in sync even if SignalR batches are delayed.
+                SyncTracksFromWorkflow(job, wf);
 
                 if (wf.Summary.State is ServerWorkflowState.Completed or ServerWorkflowState.Failed)
                 {
@@ -479,6 +483,75 @@ public class DownloadService
                 _logger.LogDebug(ex, "Workflow poll failed for {WorkflowId}; retrying", workflowId);
             }
         }
+    }
+
+    /// <summary>
+    /// Mirror song jobs from a workflow HTTP snapshot into the UI track list.
+    /// Used as a fallback when SignalR activity events are missing or delayed.
+    /// </summary>
+    private void SyncTracksFromWorkflow(DownloadJob job, WorkflowDetailDto wf)
+    {
+        var changed = false;
+        foreach (var summary in wf.Jobs.Where(j => j.Kind == ServerJobKind.Song))
+        {
+            var query = QueryFromJobSummary(summary);
+            var track = job.Tracks.FirstOrDefault(t =>
+                string.Equals(t.Title, query.Title, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrEmpty(query.Artist) || string.IsNullOrEmpty(t.Artist) ||
+                 string.Equals(t.Artist, query.Artist, StringComparison.OrdinalIgnoreCase)));
+
+            if (track is null)
+            {
+                track = new TrackInfo
+                {
+                    Artist = query.Artist ?? "",
+                    Title = query.Title ?? "",
+                    Album = query.Album ?? "",
+                };
+                job.Tracks.Add(track);
+                changed = true;
+            }
+
+            var newState = DaemonStateMapper.ToAppState(summary);
+            if (!string.Equals(track.State, newState, StringComparison.Ordinal))
+            {
+                track.State = newState;
+                changed = true;
+            }
+
+            if (summary.TerminalOutcome == ServerJobTerminalOutcome.Failed
+                && !string.IsNullOrEmpty(summary.FailureMessage)
+                && track.FailureReason != summary.FailureMessage)
+            {
+                track.FailureReason = summary.FailureMessage;
+                changed = true;
+            }
+        }
+
+        if (!changed) return;
+
+        RecalculateOverallProgress(job);
+        _ = _hub.Clients.All.SendAsync("TrackList", job.Id, job.Tracks.ToList());
+    }
+
+    private static SongQueryDto QueryFromJobSummary(JobSummaryDto payload)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.ItemName) && payload.ItemName.Contains(" - "))
+        {
+            var parts = payload.ItemName.Split(" - ", 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
+                return new SongQueryDto(Artist: parts[0], Title: parts[1]);
+        }
+
+        if (!string.IsNullOrWhiteSpace(payload.QueryText))
+        {
+            var parts = payload.QueryText.Split(" - ", 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
+                return new SongQueryDto(Artist: parts[0], Title: parts[1]);
+            return new SongQueryDto(Title: payload.QueryText);
+        }
+
+        return new SongQueryDto(Title: payload.ItemName);
     }
 
     // ── Private: HTTP helpers ──────────────────────────────────────────────
