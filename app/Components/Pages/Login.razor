@@ -68,7 +68,7 @@
         loading = true;
         error = null;
 
-        var (success, err) = await AuthService.LoginAsync(username.Trim(), password);
+        var (success, err, _, _) = await AuthService.LoginAsync(username.Trim(), password);
 
         if (success)
         {
