@@ -354,9 +354,11 @@ public class DownloadService
             if (job.InputType is InputType.Spotify or InputType.YouTube or InputType.Bandcamp
                                  or InputType.CSV or InputType.Tracklist)
             {
-                // Extract job: daemon handles parsing/expansion into child jobs
+                // List/CSV extractors expect a filesystem path. Inline pastes are written
+                // to a temp file under the job folder before submission.
+                var extractInput = MaterializeListInputIfNeeded(job);
                 var extractOptions = BuildSubmissionOptions(job, workflowId, s, job.InputType);
-                summary = await SubmitExtractAsync(job.Input, ToDaemonInputTypeString(job.InputType), extractOptions, job.Cts.Token);
+                summary = await SubmitExtractAsync(extractInput, ToDaemonInputTypeString(job.InputType), extractOptions, job.Cts.Token);
             }
             else if (job.AlbumMode)
             {
@@ -541,6 +543,71 @@ public class DownloadService
 
     private static string ToDaemonInputTypeString(InputType inputType)
         => ToDaemonInputType(inputType).ToString();
+
+    /// <summary>
+    /// Sockseek List/CSV extractors read a file path. When the UI detected an
+    /// inline paste, materialize it under the job download folder.
+    /// List lines are space-separated fields (query, conditions…), so artist/title
+    /// queries with spaces must be quoted — see sockseek list-file format.
+    /// </summary>
+    private string MaterializeListInputIfNeeded(DownloadJob job)
+    {
+        if (job.InputType is not (InputType.Tracklist or InputType.CSV))
+            return job.Input;
+
+        // Already a real path (e.g. restored job or dropped file).
+        if (job.Input.IndexOf('\n') < 0
+            && job.Input.IndexOf('\r') < 0
+            && File.Exists(job.Input))
+            return job.Input;
+
+        Directory.CreateDirectory(job.DownloadPath);
+        var ext = job.InputType == InputType.CSV ? ".csv" : ".txt";
+        var path = Path.Combine(job.DownloadPath, $"input{ext}");
+
+        var content = job.InputType == InputType.Tracklist
+            ? FormatTracklistForSockseek(job.Input, job.AlbumMode)
+            : job.Input.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        File.WriteAllText(path, content);
+        _logger.LogInformation("[{JobId}] Wrote inline {Type} input to {Path}", job.Id, job.InputType, path);
+        return path;
+    }
+
+    /// <summary>
+    /// Convert a freeform "Artist - Title" paste into sockseek list-file lines.
+    /// Unquoted spaces would otherwise split the query into fake condition tokens.
+    /// </summary>
+    internal static string FormatTracklistForSockseek(string input, bool albumMode)
+    {
+        var prefix = albumMode ? "a:" : "s:";
+        var lines = input
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var raw in lines)
+        {
+            var line = InputTypeDetector.CleanTrackLine(raw);
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+
+            // Preserve an explicit sockseek mode/conditions line the user already wrote.
+            if (line.StartsWith("a:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("s:", StringComparison.OrdinalIgnoreCase)
+                || (line.StartsWith('"') && line.EndsWith('"')))
+            {
+                sb.AppendLine(line);
+                continue;
+            }
+
+            var escaped = line.Replace('"', '\'');
+            sb.Append(prefix).Append('"').Append(escaped).Append('"').AppendLine();
+        }
+
+        return sb.ToString();
+    }
 
     private static Sockseek.Core.InputType ToDaemonInputType(InputType inputType)
         => inputType switch
