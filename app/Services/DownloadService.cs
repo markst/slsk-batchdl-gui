@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
-using Sldl.Api;
+using Sockseek.Api;
 using SldlWeb.Hubs;
 using SldlWeb.Models;
 
 namespace SldlWeb.Services;
 
 /// <summary>
-/// Orchestrates job submission and tracking against the sldl daemon HTTP API.
+/// Orchestrates job submission and tracking against the sockseek daemon HTTP API.
 /// Each app DownloadJob maps to a daemon workflow. Tracks are updated by the
-/// SldlEventBridge via UpdateTrackFromDaemon() as live events arrive.
+/// SldlEventBridge via UpdateTrackFromEvent() as live events arrive.
 /// </summary>
 public class DownloadService
 {
@@ -20,7 +20,7 @@ public class DownloadService
     private readonly ConcurrentDictionary<Guid, string> _workflowToJob = new();
     private readonly SemaphoreSlim _jobSemaphore = new(1);
     private readonly IHubContext<DownloadHub> _hub;
-    private readonly SldlApiClient _sldl;
+    private readonly SockseekApiClient _sldl;
     private readonly SettingsService _settings;
     private readonly ILogger<DownloadService> _logger;
 
@@ -29,7 +29,7 @@ public class DownloadService
         SettingsService settings,
         ILogger<DownloadService> logger,
         JobRestorer jobRestorer,
-        SldlApiClient sldl)
+        SockseekApiClient sldl)
     {
         _hub = hub;
         _settings = settings;
@@ -242,9 +242,17 @@ public class DownloadService
                 track.Album = payload.Query.Album;
         }
 
-        var newState = DaemonStateMapper.ToAppState(payload.State);
+        var newState = DaemonStateMapper.ToAppState(payload);
         track.State = newState;
         track.FailureReason = DaemonStateMapper.ToAppFailureReason(payload.FailureReason);
+        if (!string.IsNullOrEmpty(payload.FailureMessage))
+        {
+            track.FailureReason = string.IsNullOrEmpty(track.FailureReason)
+                ? payload.FailureMessage
+                : $"{track.FailureReason}: {payload.FailureMessage}";
+            _logger.LogWarning("[{JobId}] {Track} failed: {Reason}",
+                jobId, $"{track.Artist} – {track.Title}", track.FailureReason);
+        }
         if (!string.IsNullOrEmpty(payload.DownloadPath))
             track.DownloadPath = payload.DownloadPath;
 
@@ -280,7 +288,7 @@ public class DownloadService
     /// Called by SldlEventBridge when a workflow.upserted state event arrives for a tracked workflow.
     /// Recalculates the app-level JobStatus from the daemon workflow aggregate state.
     /// </summary>
-    public void HandleWorkflowUpserted(string jobId, ServerWorkflowState workflowState)
+    public void HandleWorkflowUpserted(string jobId, ServerWorkflowState workflowState, string? error = null)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return;
 
@@ -291,10 +299,26 @@ public class DownloadService
             _ => job.Status // keep current (Active)
         };
 
-        if (newStatus == job.Status) return;
+        if (newStatus == job.Status && string.IsNullOrEmpty(error)) return;
         job.Status = newStatus;
+        if (!string.IsNullOrEmpty(error))
+            job.Error = error;
         if (newStatus is JobStatus.Completed or JobStatus.Failed)
             job.CompletedAt = DateTime.UtcNow;
+
+        _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
+    }
+
+    /// <summary>Record a daemon-side failure message on the app job (and log).</summary>
+    public void ReportJobFailure(string jobId, string message, string? detail = null)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job)) return;
+
+        job.Error = message;
+        if (detail is not null)
+            _logger.LogWarning("[{JobId}] {Message}\n{Detail}", jobId, message, detail);
+        else
+            _logger.LogWarning("[{JobId}] {Message}", jobId, message);
 
         _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
     }
@@ -331,7 +355,8 @@ public class DownloadService
                                  or InputType.CSV or InputType.Tracklist)
             {
                 // Extract job: daemon handles parsing/expansion into child jobs
-                summary = await SubmitExtractAsync(job.Input, options, job.Cts.Token);
+                var extractOptions = BuildSubmissionOptions(job, workflowId, s, job.InputType);
+                summary = await SubmitExtractAsync(job.Input, ToDaemonInputTypeString(job.InputType), extractOptions, job.Cts.Token);
             }
             else if (job.AlbumMode)
             {
@@ -341,7 +366,8 @@ public class DownloadService
             else
             {
                 // Free-text: treat as extract; daemon will attempt artist – title split
-                summary = await SubmitExtractAsync(job.Input, options, job.Cts.Token);
+                var extractOptions = BuildSubmissionOptions(job, workflowId, s, job.InputType);
+                summary = await SubmitExtractAsync(job.Input, ToDaemonInputTypeString(job.InputType), extractOptions, job.Cts.Token);
             }
 
             if (summary is null)
@@ -423,13 +449,25 @@ public class DownloadService
             // Fetch workflow snapshot as fallback if events haven't arrived
             try
             {
-                var wf = await _sldl.GetWorkflowAsync(workflowId, job.Cts.Token);
+                var wf = await _sldl.GetWorkflowAsync(workflowId, includeAll: true, job.Cts.Token);
 
                 if (wf is null) continue;
 
                 if (wf.Summary.State is ServerWorkflowState.Completed or ServerWorkflowState.Failed)
                 {
-                    HandleWorkflowUpserted(job.Id, wf.Summary.State);
+                    string? error = null;
+                    if (wf.Summary.State is ServerWorkflowState.Failed)
+                    {
+                        var failed = wf.Jobs.FirstOrDefault(j =>
+                            j.TerminalOutcome == ServerJobTerminalOutcome.Failed
+                            && !string.IsNullOrEmpty(j.FailureMessage));
+                        error = failed?.FailureMessage
+                            ?? failed?.FailureReason?.ToString()
+                            ?? "Workflow failed";
+                        _logger.LogWarning("[{JobId}] Workflow failed: {Error}", job.Id, error);
+                    }
+
+                    HandleWorkflowUpserted(job.Id, wf.Summary.State, error);
                     return;
                 }
             }
@@ -443,9 +481,9 @@ public class DownloadService
 
     // ── Private: HTTP helpers ──────────────────────────────────────────────
 
-    private async Task<JobSummaryDto> SubmitExtractAsync(string input, SubmissionOptionsDto options, CancellationToken ct)
+    private async Task<JobSummaryDto> SubmitExtractAsync(string input, string? inputType, SubmissionOptionsDto options, CancellationToken ct)
     {
-        var body = new SubmitExtractJobRequestDto(input, AutoStartExtractedResult: true, Options: options);
+        var body = new SubmitExtractJobRequestDto(input, InputType: inputType, AutoStartExtractedResult: true, Options: options);
         return await _sldl.SubmitExtractJobAsync(body, ct);
     }
 
@@ -474,17 +512,46 @@ public class DownloadService
         }
     }
 
-    private static SubmissionOptionsDto BuildSubmissionOptions(DownloadJob job, Guid workflowId, AppSettings s)
+    private static SubmissionOptionsDto BuildSubmissionOptions(DownloadJob job, Guid workflowId, AppSettings s, InputType? extractInputType = null)
     {
         var profiles = new List<string>();
         if (!string.IsNullOrEmpty(job.Profile))
             profiles.Add(job.Profile);
 
+        DownloadSettingsPatchDto? downloadSettings = null;
+        if (extractInputType is not null)
+        {
+            // v3 defaults string/list extracts to album; keep song-mode when the UI did not request album.
+            Sockseek.Core.ExtractionMode? requestedMode = null;
+            if (!job.AlbumMode && extractInputType is InputType.Search or InputType.Tracklist)
+                requestedMode = Sockseek.Core.ExtractionMode.Song;
+
+            downloadSettings = new DownloadSettingsPatchDto(
+                Extraction: new ExtractionSettingsPatchDto(
+                    InputType: ToDaemonInputType(extractInputType.Value),
+                    RequestedMode: requestedMode));
+        }
+
         return new SubmissionOptionsDto(
             WorkflowId: workflowId,
             OutputParentDir: job.DownloadPath,
-            ProfileNames: profiles.Count > 0 ? profiles : null);
+            ProfileNames: profiles.Count > 0 ? profiles : null,
+            DownloadSettings: downloadSettings);
     }
+
+    private static string ToDaemonInputTypeString(InputType inputType)
+        => ToDaemonInputType(inputType).ToString();
+
+    private static Sockseek.Core.InputType ToDaemonInputType(InputType inputType)
+        => inputType switch
+        {
+            InputType.Spotify => Sockseek.Core.InputType.Spotify,
+            InputType.YouTube => Sockseek.Core.InputType.YouTube,
+            InputType.Bandcamp => Sockseek.Core.InputType.Bandcamp,
+            InputType.CSV => Sockseek.Core.InputType.CSV,
+            InputType.Tracklist => Sockseek.Core.InputType.List,
+            _ => Sockseek.Core.InputType.String
+        };
 
     private void RecalculateOverallProgress(DownloadJob job)
     {
