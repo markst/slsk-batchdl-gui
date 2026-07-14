@@ -1,15 +1,16 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
-using Sldl.Api;
+using Sockseek.Api;
 using SldlWeb.Models;
 
 namespace SldlWeb.Services;
 
 /// <summary>
-/// Background service that subscribes to the sldl daemon's SignalR event hub and
+/// Background service that subscribes to the sockseek daemon's SignalR event hub and
 /// dispatches state-change events to DownloadService so the UI stays in sync.
 ///
-/// The hub lives at {daemonUrl}/api/events and broadcasts on the "serverEvent" method.
+/// The hub lives at {daemonUrl}/api/events. Global events arrive on <c>serverEvent</c>;
+/// workflow-scoped updates arrive on <c>workflowUpdateBatch</c> after <c>SubscribeAll</c>.
 /// Reconnection uses exponential back-off capped at 30 s.
 /// </summary>
 public sealed class SldlEventBridge : BackgroundService
@@ -40,13 +41,17 @@ public sealed class SldlEventBridge : BackgroundService
                 .AddJsonProtocol(options =>
                 {
                     options.PayloadSerializerOptions.PropertyNameCaseInsensitive = true;
-                    SldlApiJson.ConfigureSerializerOptions(options.PayloadSerializerOptions);
+                    SockseekApiJson.ConfigureSerializerOptions(options.PayloadSerializerOptions);
                 })
                 .WithAutomaticReconnect(new ExponentialBackoff())
                 .Build();
 
             connection.On<ServerEventEnvelopeDto>("serverEvent",
                 envelope => HandleEvent(ServerEventPayloadConverter.RehydrateEnvelope(envelope)));
+
+            // Sockseek v3 sends workflow-scoped events as batches, not individual serverEvent messages.
+            connection.On<WorkflowUpdateBatchDto>("workflowUpdateBatch",
+                batch => HandleWorkflowBatch(ServerEventPayloadConverter.RehydrateBatch(batch)));
 
             connection.Closed += ex =>
             {
@@ -109,6 +114,60 @@ public sealed class SldlEventBridge : BackgroundService
         await tcs.Task;
     }
 
+    private void HandleWorkflowBatch(WorkflowUpdateBatchDto batch)
+    {
+        try
+        {
+            _logger.LogDebug(
+                "Batch wf={WfId} seq={Seq}: {Jobs} jobs, {Activity} activity, {Progress} progress",
+                batch.WorkflowId, batch.Sequence,
+                batch.JobUpserts.Count, batch.Activity.Count, batch.Progress.Count);
+
+            foreach (var summary in batch.JobUpserts)
+            {
+                HandleJobUpserted(new ServerEventEnvelopeDto(
+                    Sequence: batch.Sequence,
+                    Type: "job.upserted",
+                    OccurredAtUtc: batch.OccurredAtUtc,
+                    Category: "state",
+                    SnapshotInvalidation: true,
+                    WorkflowId: batch.WorkflowId,
+                    Payload: summary));
+            }
+
+            if (batch.Workflow is not null)
+            {
+                HandleWorkflowUpserted(new ServerEventEnvelopeDto(
+                    Sequence: batch.Sequence,
+                    Type: "workflow.upserted",
+                    OccurredAtUtc: batch.OccurredAtUtc,
+                    Category: "state",
+                    SnapshotInvalidation: true,
+                    WorkflowId: batch.WorkflowId,
+                    Payload: batch.Workflow));
+            }
+
+            foreach (var envelope in batch.Activity)
+                HandleEvent(envelope);
+
+            foreach (var progress in batch.Progress)
+            {
+                HandleDownloadProgress(new ServerEventEnvelopeDto(
+                    Sequence: batch.Sequence,
+                    Type: "download.progress",
+                    OccurredAtUtc: batch.OccurredAtUtc,
+                    Category: "activity",
+                    SnapshotInvalidation: false,
+                    WorkflowId: batch.WorkflowId,
+                    Payload: progress));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling workflowUpdateBatch for {WorkflowId}", batch.WorkflowId);
+        }
+    }
+
     private void HandleEvent(ServerEventEnvelopeDto envelope)
     {
         try
@@ -139,6 +198,18 @@ public sealed class SldlEventBridge : BackgroundService
                     // to keep workflow→job mapping consistent but don't change UI state
                     // beyond what song.state-changed events already cover.
                     HandleJobUpserted(envelope);
+                    break;
+
+                case "diagnostic.error":
+                    HandleDiagnosticError(envelope);
+                    break;
+
+                case "extraction.failed":
+                    HandleExtractionFailed(envelope);
+                    break;
+
+                case "job.message":
+                    HandleJobMessage(envelope);
                     break;
 
                 default:
@@ -188,26 +259,30 @@ public sealed class SldlEventBridge : BackgroundService
         }
 
         var track = TrackLabel(payload.Query);
-        switch (payload.State)
+        var appState = DaemonStateMapper.ToAppState(payload);
+        switch (appState)
         {
-            case ServerJobState.Downloading:
+            case "Downloading":
                 var user = payload.ChosenCandidate?.Username ?? "?";
                 var file = payload.ChosenCandidate is { } c ? System.IO.Path.GetFileName(c.Filename) : null;
                 _logger.LogInformation("[{JobId}] Downloading {Track}  ←  {User}/{File}",
                     jobId, track, user, file ?? "");
                 break;
-            case ServerJobState.Done:
+            case "Done":
                 _logger.LogInformation("[{JobId}] Done       {Track}  →  {Path}",
                     jobId, track, payload.DownloadPath ?? "");
                 break;
-            case ServerJobState.AlreadyExists:
+            case "AlreadyExists":
                 _logger.LogInformation("[{JobId}] Exists     {Track}", jobId, track);
                 break;
-            case ServerJobState.Failed:
-                _logger.LogWarning("[{JobId}] Failed     {Track}  ({Reason})",
-                    jobId, track, payload.FailureReason?.ToString() ?? "unknown");
+            case "Failed":
+                _logger.LogWarning("[{JobId}] Failed     {Track}  ({Reason}){Message}",
+                    jobId, track,
+                    payload.FailureReason?.ToString() ?? "unknown",
+                    string.IsNullOrEmpty(payload.FailureMessage) ? "" : $": {payload.FailureMessage}");
                 break;
-            case ServerJobState.Skipped:
+            case "Skipped":
+            case "NotFoundLastTime":
                 _logger.LogInformation("[{JobId}] Skipped    {Track}", jobId, track);
                 break;
         }
@@ -235,42 +310,166 @@ public sealed class SldlEventBridge : BackgroundService
         if (payload.State is ServerWorkflowState.Completed)
             _logger.LogInformation("[{JobId}] Job completed", jobId);
         else if (payload.State is ServerWorkflowState.Failed)
-            _logger.LogWarning("[{JobId}] Job failed", jobId);
+            _logger.LogWarning("[{JobId}] Job failed (workflow {WorkflowId})", jobId, payload.WorkflowId);
 
         _downloadService.HandleWorkflowUpserted(jobId, payload.State);
     }
 
-    private void HandleJobUpserted(ServerEventEnvelopeDto envelope)
+    private void HandleDiagnosticError(ServerEventEnvelopeDto envelope)
     {
-        if (!envelope.SnapshotInvalidation) return;
+        if (envelope.Payload is not DiagnosticErrorEventDto payload) return;
 
-        if (envelope.Payload is not JobSummaryDto payload) return;
+        var workflowId = payload.WorkflowId
+            ?? payload.Summary?.WorkflowId
+            ?? envelope.WorkflowId
+            ?? Guid.Empty;
+        var jobId = workflowId != Guid.Empty
+            ? _downloadService.GetJobIdForWorkflow(workflowId)
+            : null;
 
-        // If this is a song job in a terminal state and we don't have a state-changed event yet,
-        // treat it as a state update so nothing gets stuck.
-        if (payload.Kind is ServerJobKind.Song && DaemonStateMapper.IsTerminal(payload.State))
+        _logger.LogWarning(
+            "[{JobId}] Diagnostic error ({Type}): {Message}",
+            jobId ?? workflowId.ToString(),
+            payload.ExceptionType,
+            payload.Message);
+
+        if (jobId is not null)
+            _downloadService.ReportJobFailure(jobId, payload.Message, payload.Exception);
+    }
+
+    private void HandleExtractionFailed(ServerEventEnvelopeDto envelope)
+    {
+        if (envelope.Payload is not ExtractionFailedEventDto payload) return;
+
+        var workflowId = payload.Summary.WorkflowId;
+        var jobId = _downloadService.GetJobIdForWorkflow(workflowId);
+        _logger.LogWarning(
+            "[{JobId}] Extraction failed: {Reason}",
+            jobId ?? workflowId.ToString(),
+            payload.Reason);
+
+        if (jobId is not null)
+            _downloadService.ReportJobFailure(jobId, payload.Reason);
+    }
+
+    private void HandleJobMessage(ServerEventEnvelopeDto envelope)
+    {
+        if (envelope.Payload is not JobMessageEventDto payload) return;
+
+        var workflowId = payload.Summary.WorkflowId;
+        var jobId = _downloadService.GetJobIdForWorkflow(workflowId) ?? workflowId.ToString();
+        var level = payload.Level?.ToLowerInvariant();
+        if (level is "error" or "warning" or "warn")
         {
-            var jobId = _downloadService.GetJobIdForWorkflow(payload.WorkflowId);
-            if (jobId is null) return;
-
-            var fakeEvent = new SongStateChangedEventDto(
-                JobId: payload.JobId,
-                DisplayId: payload.DisplayId,
-                WorkflowId: payload.WorkflowId,
-                Query: new SongQueryDto(Title: payload.ItemName),
-                State: payload.State,
-                FailureReason: payload.FailureReason,
-                DownloadPath: null,
-                ChosenCandidate: null,
-                DiscoveryResultCount: payload.DiscoveryResultCount,
-                DiscoveryLockedFileCount: payload.DiscoveryLockedFileCount,
-                FailureMessage: payload.FailureMessage);
-
-            _downloadService.UpdateTrackFromEvent(jobId, fakeEvent, createIfMissing: false);
+            _logger.LogWarning("[{JobId}] {Source}{Message}",
+                jobId,
+                string.IsNullOrEmpty(payload.Source) ? "" : $"{payload.Source}: ",
+                payload.Message);
+        }
+        else
+        {
+            _logger.LogInformation("[{JobId}] {Source}{Message}",
+                jobId,
+                string.IsNullOrEmpty(payload.Source) ? "" : $"{payload.Source}: ",
+                payload.Message);
         }
     }
 
+    private void HandleJobUpserted(ServerEventEnvelopeDto envelope)
+    {
+        if (envelope.Payload is not JobSummaryDto payload) return;
+
+        // Surface extract/root job terminal failures that never become song.state-changed.
+        if (DaemonStateMapper.IsTerminal(payload)
+            && payload.TerminalOutcome == ServerJobTerminalOutcome.Failed
+            && !string.IsNullOrEmpty(payload.FailureMessage))
+        {
+            var failJobId = _downloadService.GetJobIdForWorkflow(payload.WorkflowId);
+            if (failJobId is not null)
+            {
+                _logger.LogWarning("[{JobId}] {Kind} failed: {Message}",
+                    failJobId, payload.Kind, payload.FailureMessage);
+                _downloadService.ReportJobFailure(failJobId, payload.FailureMessage, payload.FailureDetail);
+            }
+        }
+
+        if (payload.Kind is not ServerJobKind.Song)
+            return;
+
+        var jobId = _downloadService.GetJobIdForWorkflow(payload.WorkflowId);
+        if (jobId is null) return;
+
+        var query = QueryFromJobSummary(payload);
+        if (!DaemonStateMapper.IsTerminal(payload))
+        {
+            // Ensure the track appears as soon as the song job is upserted (searching/running).
+            _downloadService.EnsureTrack(jobId, query);
+            // Reflect live activity when we only have job.upserted (no song.state-changed yet).
+            if (payload.LifecycleState == ServerJobLifecycleState.Running)
+            {
+                _downloadService.UpdateTrackFromEvent(jobId, new SongStateChangedEventDto(
+                    JobId: payload.JobId,
+                    DisplayId: payload.DisplayId,
+                    WorkflowId: payload.WorkflowId,
+                    Query: query,
+                    LifecycleState: payload.LifecycleState,
+                    ActivityPhase: payload.ActivityPhase,
+                    ActivityUntilUtc: payload.ActivityUntilUtc,
+                    TerminalOutcome: payload.TerminalOutcome,
+                    SkipReason: payload.SkipReason,
+                    FailureReason: payload.FailureReason,
+                    DownloadPath: null,
+                    ChosenCandidate: null,
+                    DiscoveryRawResultCount: payload.DiscoveryRawResultCount,
+                    DiscoveryLockedFileCount: payload.DiscoveryLockedFileCount,
+                    FailureMessage: payload.FailureMessage,
+                    CancellationSource: payload.CancellationSource));
+            }
+            return;
+        }
+
+        var fakeEvent = new SongStateChangedEventDto(
+            JobId: payload.JobId,
+            DisplayId: payload.DisplayId,
+            WorkflowId: payload.WorkflowId,
+            Query: query,
+            LifecycleState: payload.LifecycleState,
+            ActivityPhase: payload.ActivityPhase,
+            ActivityUntilUtc: payload.ActivityUntilUtc,
+            TerminalOutcome: payload.TerminalOutcome,
+            SkipReason: payload.SkipReason,
+            FailureReason: payload.FailureReason,
+            DownloadPath: null,
+            ChosenCandidate: null,
+            DiscoveryRawResultCount: payload.DiscoveryRawResultCount,
+            DiscoveryLockedFileCount: payload.DiscoveryLockedFileCount,
+            FailureMessage: payload.FailureMessage,
+            CancellationSource: payload.CancellationSource);
+
+        _downloadService.UpdateTrackFromEvent(jobId, fakeEvent, createIfMissing: true);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    private static SongQueryDto QueryFromJobSummary(JobSummaryDto payload)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.ItemName) && payload.ItemName.Contains(" - "))
+        {
+            var parts = payload.ItemName.Split(" - ", 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
+                return new SongQueryDto(Artist: parts[0], Title: parts[1]);
+        }
+
+        if (!string.IsNullOrWhiteSpace(payload.QueryText))
+        {
+            var parts = payload.QueryText.Split(" - ", 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
+                return new SongQueryDto(Artist: parts[0], Title: parts[1]);
+            return new SongQueryDto(Title: payload.QueryText);
+        }
+
+        return new SongQueryDto(Title: payload.ItemName);
+    }
 
     private static string TrackLabel(SongQueryDto q)
     {
