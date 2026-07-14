@@ -7,6 +7,10 @@ namespace SldlWeb.Services;
 /// Discovers job folders that contain <c>tracks.csv</c>, <c>input.txt</c>, and/or any
 /// nested <c>_index.csv</c> (sockseek writes the index beside playlist/list output,
 /// e.g. <c>{jobId}/input/_index.csv</c>, not always at the job root).
+///
+/// This is not sockseek daemon persistence — that work lives on the submodule
+/// <c>persistence</c> branch. Restored jobs have no daemon workflow mapping, so Resume
+/// submits a new workflow rather than reconnecting to a live one.
 /// </summary>
 public class JobRestorer
 {

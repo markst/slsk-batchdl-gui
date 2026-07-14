@@ -8,15 +8,25 @@ namespace SldlWeb.Services;
 
 /// <summary>
 /// Orchestrates job submission and tracking against the sockseek daemon HTTP API.
-/// Each app DownloadJob maps to a daemon workflow. Tracks are updated by the
-/// SldlEventBridge via UpdateTrackFromEvent() as live events arrive.
+/// Each app <see cref="DownloadJob"/> maps to a daemon workflow. Tracks are updated by
+/// <see cref="SldlEventBridge"/> from live SignalR batches, with HTTP snapshot polling
+/// as a fallback when batches are delayed or missing.
+///
+/// Jobs live in memory only for the current process. <see cref="JobRestorer"/> can
+/// best-effort rebuild completed jobs from on-disk <c>tracks.csv</c>/<c>_index.csv</c>,
+/// but workflow↔app mappings are not durable. Upstream sockseek is designing daemon-side
+/// persistence (see submodule branch <c>persistence</c> /
+/// <c>docs/temp/PERSISTENCE-DISCUSSION.md</c>): SQLite projection + startup HTTP snapshots
+/// + ordered deltas. When that lands, prefer hydrating the UI from daemon snapshots (and a
+/// shared client store like <c>WorkflowClientStore</c>) rather than inventing a parallel
+/// app-level job database or replaying Log/activity events for durable state.
 /// </summary>
 public class DownloadService
 {
     private readonly ConcurrentDictionary<string, DownloadJob> _jobs = new();
-    // app job ID → daemon workflow ID (set after successful submission)
+    // app job ID → daemon workflow ID (set after successful submission; process-local only)
     private readonly ConcurrentDictionary<string, Guid> _jobToWorkflow = new();
-    // daemon workflow ID → app job ID (reverse lookup for event bridge)
+    // daemon workflow ID → app job ID (reverse lookup for event bridge; process-local only)
     private readonly ConcurrentDictionary<Guid, string> _workflowToJob = new();
     private readonly SemaphoreSlim _jobSemaphore = new(1);
     private readonly IHubContext<DownloadHub> _hub;
@@ -36,6 +46,8 @@ public class DownloadService
         _logger = logger;
         _sldl = sldl;
 
+        // Best-effort UI rebuild from download folders only — does not restore daemon
+        // workflow IDs or live/incomplete transfers (see class remarks / persistence branch).
         foreach (var job in jobRestorer.RestoreAll())
             _jobs.TryAdd(job.Id, job);
     }
@@ -440,7 +452,8 @@ public class DownloadService
     {
         // Poll until the event bridge updates the job status (or cancellation).
         // Live updates should prefer workflowUpdateBatch; this HTTP poll is recovery when
-        // batches are late/missing.
+        // batches are late/missing. Persistence plans treat HTTP snapshots the same way
+        // (startup + sequence-gap hydrate), eventually via a shared client state store.
         const int PollIntervalMs = 2000;
         while (!job.Cts.IsCancellationRequested)
         {
@@ -488,6 +501,12 @@ public class DownloadService
     /// <summary>
     /// Mirror song jobs from a workflow HTTP snapshot into the UI track list.
     /// Used as a fallback when SignalR activity events are missing or delayed.
+    ///
+    /// This is the same recovery idea as the planned client-side
+    /// snapshot + ordered-delta model (see sockseek <c>persistence</c> branch): when live
+    /// event stream state is incomplete, rehydrate UI rows from an HTTP snapshot rather
+    /// than inventing durable app storage. It does not survive process restart — that needs
+    /// daemon-side history (or at least a durable app↔workflow mapping) from that work.
     /// </summary>
     private void SyncTracksFromWorkflow(DownloadJob job, WorkflowDetailDto wf)
     {

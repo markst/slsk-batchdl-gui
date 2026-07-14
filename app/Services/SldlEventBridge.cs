@@ -12,6 +12,11 @@ namespace SldlWeb.Services;
 /// The hub lives at {daemonUrl}/api/events. Global events arrive on <c>serverEvent</c>;
 /// workflow-scoped updates arrive on <c>workflowUpdateBatch</c> after <c>SubscribeAll</c>.
 /// Reconnection uses exponential back-off capped at 30 s.
+///
+/// Longer-term (sockseek <c>persistence</c> branch): prefer a shared client state store
+/// that applies HTTP snapshots + compact ordered deltas, with sequence-gap recovery —
+/// see <c>HandleWorkflowBatch</c> and the GUI-EVENT-DELTAS notes on
+/// <c>WorkflowUpdateBatchDto</c>.
 /// </summary>
 public sealed class SldlEventBridge : BackgroundService
 {
@@ -116,6 +121,14 @@ public sealed class SldlEventBridge : BackgroundService
 
     private void HandleWorkflowBatch(WorkflowUpdateBatchDto batch)
     {
+        // Interim client path for sockseek's current summary-heavy WorkflowUpdateBatchDto.
+        // Upstream plan (submodule branch `persistence`, docs/temp/PERSISTENCE-DISCUSSION.md
+        // and the GUI-EVENT-DELTAS TODO on WorkflowUpdateBatchDto):
+        //   - HTTP snapshots for startup / sequence-gap recovery
+        //   - SignalR batches with compact ordered patches (not full JobSummaryDto per edge)
+        //   - WorkflowClientStore (or equivalent) applies snapshot + deltas for CLI and GUI
+        //   - Durable state must not be reconstructed by replaying activity/log events
+        // Keep apply order: job upserts → workflow summary → activity → progress.
         try
         {
             _logger.LogDebug(
