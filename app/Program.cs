@@ -1,6 +1,6 @@
 using ElectronNET.API;
 using ElectronNET.API.Entities;
-using Sldl.Api;
+using Sockseek.Api;
 using SldlWeb.Components;
 using SldlWeb.Hubs;
 using SldlWeb.Services;
@@ -25,10 +25,10 @@ builder.Services.AddHttpClient("SldlDaemon", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-builder.Services.AddSingleton<SldlApiClient>(sp =>
+builder.Services.AddSingleton<SockseekApiClient>(sp =>
 {
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("SldlDaemon");
-    return new SldlApiClient(http, SldlApiJson.CreateSerializerOptions());
+    return new SockseekApiClient(http, SockseekApiJson.CreateSerializerOptions());
 });
 
 builder.Services.AddSingleton<SettingsService>();
@@ -36,7 +36,8 @@ builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
 builder.Services.AddSingleton<BpmService>();
-builder.Services.AddHostedService<DaemonLauncherService>();
+builder.Services.AddSingleton<DaemonLauncherService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DaemonLauncherService>());
 builder.Services.AddHostedService<SldlEventBridge>();
 // NOTE: SharingService removed (Phase 6: Remove Sharing Feature)
 
