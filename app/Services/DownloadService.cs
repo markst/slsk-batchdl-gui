@@ -28,7 +28,6 @@ public class DownloadService
     private readonly ConcurrentDictionary<string, Guid> _jobToWorkflow = new();
     // daemon workflow ID → app job ID (reverse lookup for event bridge; process-local only)
     private readonly ConcurrentDictionary<Guid, string> _workflowToJob = new();
-    private readonly SemaphoreSlim _jobSemaphore = new(1);
     private readonly IHubContext<DownloadHub> _hub;
     private readonly SockseekApiClient _sldl;
     private readonly SettingsService _settings;
@@ -141,6 +140,7 @@ public class DownloadService
 
         // Reset UI state and submit a one-track extract job to the daemon
         track.State = "Initial";
+        track.DaemonJobId = null;
         track.Progress = 0;
         track.BytesTransferred = 0;
         track.TotalBytes = 0;
@@ -164,6 +164,7 @@ public class DownloadService
         foreach (var track in job.Tracks.Where(t => t.State is "Failed" or "Initial"))
         {
             track.State = "Initial";
+            track.DaemonJobId = null;
             track.Progress = 0;
             track.BytesTransferred = 0;
             track.TotalBytes = 0;
@@ -195,27 +196,32 @@ public class DownloadService
     /// Called by SldlEventBridge when a song.searching event arrives.
     /// Ensures the track exists in the job list immediately (before any state-change events).
     /// </summary>
-    public void EnsureTrack(string jobId, SongQueryDto query)
+    public void EnsureTrack(string jobId, SongQueryDto query, Guid? daemonJobId = null)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return;
 
-        var exists = job.Tracks.Any(t =>
+        var track = job.Tracks.FirstOrDefault(t =>
             string.Equals(t.Title, query.Title, StringComparison.OrdinalIgnoreCase) &&
             (string.IsNullOrEmpty(query.Artist) || string.IsNullOrEmpty(t.Artist) ||
              string.Equals(t.Artist, query.Artist, StringComparison.OrdinalIgnoreCase)));
 
-        if (!exists)
+        if (track is null)
         {
             job.Tracks.Add(new TrackInfo
             {
                 Artist = query.Artist ?? "",
                 Title = query.Title ?? "",
                 Album = query.Album ?? "",
-                State = "Searching"
+                State = "Searching",
+                DaemonJobId = daemonJobId is { } id && id != Guid.Empty ? id : null,
             });
             RecalculateOverallProgress(job);
             _ = _hub.Clients.All.SendAsync("TrackList", job.Id, job.Tracks.ToList());
+            return;
         }
+
+        if (daemonJobId is { } existingId && existingId != Guid.Empty && track.DaemonJobId != existingId)
+            track.DaemonJobId = existingId;
     }
 
     /// <summary>
@@ -242,6 +248,7 @@ public class DownloadService
                 Artist = payload.Query.Artist ?? "",
                 Title = payload.Query.Title ?? "",
                 Album = payload.Query.Album ?? "",
+                DaemonJobId = payload.JobId == Guid.Empty ? null : payload.JobId,
             };
             job.Tracks.Add(track);
         }
@@ -252,6 +259,8 @@ public class DownloadService
                 track.Artist = payload.Query.Artist;
             if (!string.IsNullOrEmpty(payload.Query.Album) && string.IsNullOrEmpty(track.Album))
                 track.Album = payload.Query.Album;
+            if (payload.JobId != Guid.Empty)
+                track.DaemonJobId = payload.JobId;
         }
 
         var newState = DaemonStateMapper.ToAppState(payload);
@@ -277,14 +286,14 @@ public class DownloadService
 
     /// <summary>
     /// Called by SldlEventBridge when a download.progress event arrives.
+    /// Progress events carry the daemon JobId (not artist/title), so route via
+    /// <see cref="TrackInfo.DaemonJobId"/>.
     /// </summary>
     public void UpdateTrackProgress(string jobId, Guid daemonJobId, long bytesTransferred, long totalBytes)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return;
 
-        // Progress events carry the daemon job ID but not the track identity.
-        // We update whichever track is currently in Downloading state.
-        var track = job.Tracks.FirstOrDefault(t => t.State == "Downloading");
+        var track = job.Tracks.FirstOrDefault(t => t.DaemonJobId == daemonJobId);
         if (track is null) return;
 
         track.BytesTransferred = bytesTransferred;
@@ -339,15 +348,6 @@ public class DownloadService
 
     private async Task ProcessJobAsync(DownloadJob job)
     {
-        try { await _jobSemaphore.WaitAsync(job.Cts.Token); }
-        catch (OperationCanceledException)
-        {
-            job.Status = JobStatus.Cancelled;
-            job.CompletedAt = DateTime.UtcNow;
-            await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
-            return;
-        }
-
         try
         {
             job.Status = JobStatus.Running;
@@ -402,8 +402,8 @@ public class DownloadService
 
             _logger.LogInformation("Job {AppId} submitted as daemon workflow {WorkflowId}", job.Id, summary.WorkflowId);
 
-            // The event bridge will update job.Status when the workflow completes.
-            // We wait here so the semaphore stays held (sequential policy) until done.
+            // Wait for terminal state without gating other UI jobs — the daemon can
+            // run multiple workflows concurrently.
             await WaitForWorkflowAsync(summary.WorkflowId, job);
         }
         catch (OperationCanceledException)
@@ -420,7 +420,6 @@ public class DownloadService
         {
             job.CompletedAt ??= DateTime.UtcNow;
             await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
-            _jobSemaphore.Release();
         }
     }
 
@@ -526,8 +525,14 @@ public class DownloadService
                     Artist = query.Artist ?? "",
                     Title = query.Title ?? "",
                     Album = query.Album ?? "",
+                    DaemonJobId = summary.JobId == Guid.Empty ? null : summary.JobId,
                 };
                 job.Tracks.Add(track);
+                changed = true;
+            }
+            else if (summary.JobId != Guid.Empty && track.DaemonJobId != summary.JobId)
+            {
+                track.DaemonJobId = summary.JobId;
                 changed = true;
             }
 
@@ -606,25 +611,39 @@ public class DownloadService
         }
     }
 
-    private static SubmissionOptionsDto BuildSubmissionOptions(DownloadJob job, Guid workflowId, AppSettings s, InputType? extractInputType = null)
+    private SubmissionOptionsDto BuildSubmissionOptions(DownloadJob job, Guid workflowId, AppSettings s, InputType? extractInputType = null)
     {
         var profiles = new List<string>();
         if (!string.IsNullOrEmpty(job.Profile))
             profiles.Add(job.Profile);
 
-        DownloadSettingsPatchDto? downloadSettings = null;
+        var ops = new List<DownloadSettingOperationDto>();
+        foreach (var arg in job.ExtraArgs)
+        {
+            var mapped = ExtraArgMapper.ToOperations([arg]).ToList();
+            if (mapped.Count == 0)
+            {
+                if (!string.IsNullOrWhiteSpace(arg.Flag))
+                    _logger.LogWarning("[{JobId}] Ignoring unsupported extra arg {Flag}", job.Id, arg.Flag);
+                continue;
+            }
+            ops.AddRange(mapped);
+        }
+
         if (extractInputType is not null)
         {
+            ops.Add(DownloadSettingsDeltaMapper.Set("Extraction.InputType", ToDaemonInputType(extractInputType.Value)));
             // v3 defaults string/list extracts to album; keep song-mode when the UI did not request album.
-            Sockseek.Core.ExtractionMode? requestedMode = null;
+            // Applied after ExtraArgs so the UI AlbumMode toggle wins over a stray --album flag.
             if (!job.AlbumMode && extractInputType is InputType.Search or InputType.Tracklist)
-                requestedMode = Sockseek.Core.ExtractionMode.Song;
-
-            downloadSettings = new DownloadSettingsPatchDto(
-                Extraction: new ExtractionSettingsPatchDto(
-                    InputType: ToDaemonInputType(extractInputType.Value),
-                    RequestedMode: requestedMode));
+                ops.Add(DownloadSettingsDeltaMapper.Set("Extraction.RequestedMode", Sockseek.Core.ExtractionMode.Song));
+            else if (job.AlbumMode && extractInputType is InputType.Search or InputType.Tracklist)
+                ops.Add(DownloadSettingsDeltaMapper.Set("Extraction.RequestedMode", Sockseek.Core.ExtractionMode.Album));
         }
+
+        var downloadSettings = ops.Count == 0
+            ? null
+            : DownloadSettingsPatchDtoMapper.FromOperations(ops);
 
         return new SubmissionOptionsDto(
             WorkflowId: workflowId,

@@ -198,6 +198,10 @@ public sealed class SldlEventBridge : BackgroundService
                     HandleSongStateChanged(envelope);
                     break;
 
+                case "download.started":
+                    HandleDownloadStarted(envelope);
+                    break;
+
                 case "download.progress":
                     HandleDownloadProgress(envelope);
                     break;
@@ -253,7 +257,7 @@ public sealed class SldlEventBridge : BackgroundService
         var track = TrackLabel(payload.Query);
         _logger.LogInformation("[{JobId}] Searching  {Track}", jobId, track);
 
-        _downloadService.EnsureTrack(jobId, payload.Query);
+        _downloadService.EnsureTrack(jobId, payload.Query, payload.JobId);
     }
 
     private void HandleSongStateChanged(ServerEventEnvelopeDto envelope)
@@ -301,6 +305,19 @@ public sealed class SldlEventBridge : BackgroundService
         }
 
         _downloadService.UpdateTrackFromEvent(jobId, payload);
+    }
+
+    private void HandleDownloadStarted(ServerEventEnvelopeDto envelope)
+    {
+        if (envelope.Payload is not DownloadStartedEventDto payload) return;
+
+        var workflowId = payload.WorkflowId != Guid.Empty ? payload.WorkflowId
+            : envelope.WorkflowId ?? Guid.Empty;
+        var jobId = _downloadService.GetJobIdForWorkflow(workflowId);
+        if (jobId is null) return;
+
+        // Bind JobId before progress events so concurrent transfers don't share a row.
+        _downloadService.EnsureTrack(jobId, payload.Query, payload.JobId);
     }
 
     private void HandleDownloadProgress(ServerEventEnvelopeDto envelope)
@@ -416,7 +433,7 @@ public sealed class SldlEventBridge : BackgroundService
         if (!DaemonStateMapper.IsTerminal(payload))
         {
             // Ensure the track appears as soon as the song job is upserted (searching/running).
-            _downloadService.EnsureTrack(jobId, query);
+            _downloadService.EnsureTrack(jobId, query, payload.JobId);
             // Reflect live activity when we only have job.upserted (no song.state-changed yet).
             if (payload.LifecycleState == ServerJobLifecycleState.Running)
             {

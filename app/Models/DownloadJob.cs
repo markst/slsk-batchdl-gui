@@ -91,6 +91,8 @@ public class TrackInfo
     public string State { get; set; } = "Initial";
     public string? FailureReason { get; set; }
     public string? DownloadPath { get; set; }
+    /// <summary>Daemon song job ID used to route progress events to the correct row.</summary>
+    public Guid? DaemonJobId { get; set; }
     public double Progress { get; set; }
     public long BytesTransferred { get; set; }
     public long TotalBytes { get; set; }
