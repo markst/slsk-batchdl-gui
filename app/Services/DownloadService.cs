@@ -131,14 +131,31 @@ public class DownloadService
         return false;
     }
 
-    public bool RetryTrack(string jobId, int trackIndex)
+    public bool RetryTrack(
+        string jobId,
+        int trackIndex,
+        string? artist = null,
+        string? title = null,
+        string? album = null,
+        bool? useYtDlp = null)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return false;
         if (trackIndex < 0 || trackIndex >= job.Tracks.Count) return false;
         var track = job.Tracks[trackIndex];
         if (track.State is not "Failed") return false;
 
-        // Reset UI state and submit a one-track extract job to the daemon
+        if (artist is not null) track.Artist = artist.Trim();
+        if (title is not null) track.Title = title.Trim();
+        if (album is not null) track.Album = album.Trim();
+
+        // Ensure polling cancellation token is usable after a terminal job.
+        if (job.Cts.IsCancellationRequested)
+            job.Cts = new CancellationTokenSource();
+
+        job.Status = JobStatus.Running;
+        job.CompletedAt = null;
+        job.Error = null;
+
         track.State = "Initial";
         track.DaemonJobId = null;
         track.Progress = 0;
@@ -146,8 +163,9 @@ public class DownloadService
         track.TotalBytes = 0;
         track.FailureReason = null;
         _ = _hub.Clients.All.SendAsync("TrackStateChanged", job.Id, track.Artist, track.Title, "Initial", (string?)null, (string?)null);
+        _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
 
-        _ = Task.Run(() => SubmitRetryJobAsync(job, track));
+        _ = Task.Run(() => SubmitRetryJobAsync(job, track, useYtDlp));
         return true;
     }
 
@@ -423,20 +441,29 @@ public class DownloadService
         }
     }
 
-    private async Task SubmitRetryJobAsync(DownloadJob job, TrackInfo track)
+    private async Task SubmitRetryJobAsync(DownloadJob job, TrackInfo track, bool? useYtDlp = null)
     {
         try
         {
             var s = _settings.Get();
             var workflowId = Guid.NewGuid();
-            var options = BuildSubmissionOptions(job, workflowId, s);
+            var extraArgs = ResolveRetryExtraArgs(job, useYtDlp);
+            var options = BuildSubmissionOptions(job, workflowId, s, extraArgsOverride: extraArgs);
             var query = new SongQueryDto(Artist: track.Artist, Title: track.Title, Album: track.Album);
-            var summary = await SubmitSongAsync(query, options, CancellationToken.None);
+            var summary = await SubmitSongAsync(query, options, job.Cts.Token);
 
-            // Add secondary workflow mapping (not replacing primary)
-            _workflowToJob.TryAdd(summary.WorkflowId, job.Id);
-            _logger.LogInformation("Retry for {Artist} – {Title} submitted as workflow {WorkflowId}",
-                track.Artist, track.Title, summary.WorkflowId);
+            // Secondary workflow mapping so events/progress route back to this app job.
+            _workflowToJob[summary.WorkflowId] = job.Id;
+            _logger.LogInformation("Retry for {Artist} – {Title} submitted as workflow {WorkflowId} (ytDlp={YtDlp})",
+                track.Artist, track.Title, summary.WorkflowId, useYtDlp == true);
+
+            await WaitForWorkflowAsync(summary.WorkflowId, job);
+        }
+        catch (OperationCanceledException)
+        {
+            track.State = "Failed";
+            track.FailureReason = "Cancelled";
+            _ = _hub.Clients.All.SendAsync("TrackStateChanged", job.Id, track.Artist, track.Title, "Failed", "Cancelled", (string?)null);
         }
         catch (Exception ex)
         {
@@ -444,7 +471,27 @@ public class DownloadService
             track.State = "Failed";
             track.FailureReason = "Other";
             _ = _hub.Clients.All.SendAsync("TrackStateChanged", job.Id, track.Artist, track.Title, "Failed", "Other", (string?)null);
+            job.Status = JobStatus.Failed;
+            job.Error = ex.Message;
+            job.CompletedAt ??= DateTime.UtcNow;
+            _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
         }
+    }
+
+    /// <summary>
+    /// One-shot yt-dlp for a retry must not permanently mutate <see cref="DownloadJob.ExtraArgs"/>.
+    /// </summary>
+    private static List<ExtraArg> ResolveRetryExtraArgs(DownloadJob job, bool? useYtDlp)
+    {
+        var args = job.ExtraArgs.ToList();
+        if (useYtDlp != true)
+            return args;
+
+        if (args.Any(a => string.Equals(a.Flag, "--yt-dlp", StringComparison.OrdinalIgnoreCase)))
+            return args;
+
+        args.Add(new ExtraArg { Flag = "--yt-dlp" });
+        return args;
     }
 
     private async Task WaitForWorkflowAsync(Guid workflowId, DownloadJob job)
@@ -611,14 +658,19 @@ public class DownloadService
         }
     }
 
-    private SubmissionOptionsDto BuildSubmissionOptions(DownloadJob job, Guid workflowId, AppSettings s, InputType? extractInputType = null)
+    private SubmissionOptionsDto BuildSubmissionOptions(
+        DownloadJob job,
+        Guid workflowId,
+        AppSettings s,
+        InputType? extractInputType = null,
+        IEnumerable<ExtraArg>? extraArgsOverride = null)
     {
         var profiles = new List<string>();
         if (!string.IsNullOrEmpty(job.Profile))
             profiles.Add(job.Profile);
 
         var ops = new List<DownloadSettingOperationDto>();
-        foreach (var arg in job.ExtraArgs)
+        foreach (var arg in extraArgsOverride ?? job.ExtraArgs)
         {
             var mapped = ExtraArgMapper.ToOperations([arg]).ToList();
             if (mapped.Count == 0)
