@@ -2,6 +2,16 @@ using SldlWeb.Models;
 
 namespace SldlWeb.Services;
 
+/// <summary>
+/// Best-effort rebuild of completed UI jobs from files under the download root.
+/// Discovers job folders that contain <c>tracks.csv</c>, <c>input.txt</c>, and/or any
+/// nested <c>_index.csv</c> (sockseek writes the index beside playlist/list output,
+/// e.g. <c>{jobId}/input/_index.csv</c>, not always at the job root).
+///
+/// This is not sockseek daemon persistence — that work lives on the submodule
+/// <c>persistence</c> branch. Restored jobs have no daemon workflow mapping, so Resume
+/// submits a new workflow rather than reconnecting to a live one.
+/// </summary>
 public class JobRestorer
 {
     private readonly SettingsService _settings;
@@ -17,18 +27,19 @@ public class JobRestorer
     {
         var jobs = new List<DownloadJob>();
         var s = _settings.Get();
-        var basePath = string.IsNullOrEmpty(s.DownloadPath) ? Path.Combine(Directory.GetCurrentDirectory(), "downloads") : s.DownloadPath;
+        var basePath = string.IsNullOrEmpty(s.DownloadPath)
+            ? Path.Combine(Directory.GetCurrentDirectory(), "downloads")
+            : s.DownloadPath;
         if (!Directory.Exists(basePath)) return jobs;
 
         foreach (var dir in Directory.GetDirectories(basePath).OrderBy(d => d))
         {
-            var inputPath = Path.Combine(dir, "tracks.csv");
-            var rootIndexPath = Path.Combine(dir, "_index.csv");
-            if (!File.Exists(inputPath) && !File.Exists(rootIndexPath)) continue;
+            if (!LooksLikeJobDirectory(dir))
+                continue;
 
             try
             {
-                var job = RestoreFromDirectory(dir, inputPath, rootIndexPath);
+                var job = RestoreFromDirectory(dir);
                 if (job is not null)
                     jobs.Add(job);
             }
@@ -41,36 +52,82 @@ public class JobRestorer
         return jobs;
     }
 
-    private DownloadJob? RestoreFromDirectory(string dir, string inputPath, string rootIndexPath)
+    /// <summary>
+    /// Job folders may only have nested indexes (no root <c>_index.csv</c> /
+    /// <c>tracks.csv</c>), which previously caused restore to skip them entirely.
+    /// </summary>
+    private static bool LooksLikeJobDirectory(string dir)
+    {
+        if (File.Exists(Path.Combine(dir, "tracks.csv"))) return true;
+        if (File.Exists(Path.Combine(dir, "input.txt"))) return true;
+        if (File.Exists(Path.Combine(dir, "input.csv"))) return true;
+        if (File.Exists(Path.Combine(dir, "_index.csv"))) return true;
+        return Directory.EnumerateFiles(dir, "_index.csv", SearchOption.AllDirectories).Any();
+    }
+
+    private DownloadJob? RestoreFromDirectory(string dir)
     {
         var dirName = Path.GetFileName(dir);
         var id = dirName;
-
-        DateTime createdAt = Directory.GetCreationTimeUtc(dir);
+        var createdAt = Directory.GetCreationTimeUtc(dir);
 
         var indexResults = new List<IndexEntry>();
         foreach (var indexFile in Directory.GetFiles(dir, "_index.csv", SearchOption.AllDirectories))
         {
             var indexDir = Path.GetDirectoryName(indexFile)!;
-            indexResults.AddRange(ParseIndexEntries(indexFile, indexDir));
+            indexResults.AddRange(ParseIndexEntries(indexFile, indexDir, _logger));
         }
+
+        var tracksCsvPath = Path.Combine(dir, "tracks.csv");
+        var inputTxtPath = Path.Combine(dir, "input.txt");
+        var inputCsvPath = Path.Combine(dir, "input.csv");
 
         List<TrackInfo> tracks;
         string input;
+        InputType inputType;
 
-        if (File.Exists(inputPath))
+        if (File.Exists(tracksCsvPath))
         {
-            input = File.ReadAllText(inputPath).Trim();
-            var requestedTracks = CsvHelper.ParseInputCsv(inputPath);
+            input = File.ReadAllText(tracksCsvPath).Trim();
+            var requestedTracks = CsvHelper.ParseInputCsv(tracksCsvPath);
             tracks = CrossReference(requestedTracks, indexResults);
+            inputType = InputTypeDetector.Detect(input);
+        }
+        else if (File.Exists(inputTxtPath) || File.Exists(inputCsvPath))
+        {
+            var path = File.Exists(inputTxtPath) ? inputTxtPath : inputCsvPath;
+            input = File.ReadAllText(path).Trim();
+            inputType = File.Exists(inputCsvPath) && !File.Exists(inputTxtPath)
+                ? InputType.CSV
+                : InputType.Tracklist;
+
+            // Prefer index rows when present; otherwise show requested lines as Initial.
+            if (indexResults.Count > 0)
+            {
+                tracks = indexResults.Select(e => e.ToTrackInfo()).ToList();
+            }
+            else if (inputType == InputType.Tracklist)
+            {
+                tracks = InputTypeDetector.ParseTracklist(input)
+                    .Select(t => new TrackInfo { Artist = t.Artist, Title = t.Title, State = "Initial" })
+                    .ToList();
+            }
+            else
+            {
+                tracks = [];
+            }
         }
         else
         {
             input = dirName;
             tracks = indexResults.Select(e => e.ToTrackInfo()).ToList();
+            inputType = InputTypeDetector.Detect(input);
         }
 
-        var downloaded = tracks.Count(t => t.State is "Downloaded" or "AlreadyExists");
+        if (tracks.Count == 0 && indexResults.Count == 0 && string.IsNullOrWhiteSpace(input))
+            return null;
+
+        var downloaded = tracks.Count(t => t.State is "Done" or "AlreadyExists");
         var failed = tracks.Count(t => t.State == "Failed");
         var status = tracks.Count == 0 ? JobStatus.Completed
             : failed > 0 && downloaded == 0 ? JobStatus.Failed
@@ -80,7 +137,7 @@ public class JobRestorer
         {
             Id = id,
             Input = input,
-            InputType = InputTypeDetector.Detect(input),
+            InputType = inputType,
             Status = status,
             CreatedAt = createdAt,
             CompletedAt = createdAt,
@@ -88,7 +145,8 @@ public class JobRestorer
             Tracks = tracks,
         };
 
-        _logger.LogInformation("Restored job {Id} from {Dir} with {Count} tracks ({Dl} downloaded, {Fl} failed)",
+        _logger.LogInformation(
+            "Restored job {Id} from {Dir} with {Count} tracks ({Dl} downloaded, {Fl} failed)",
             id, dirName, tracks.Count, downloaded, failed);
 
         return job;
@@ -133,7 +191,7 @@ public class JobRestorer
 
     private static readonly Dictionary<int, string> _stateMap = new()
     {
-        [1] = "Downloaded",
+        [1] = "Done",
         [2] = "Failed",
         [3] = "AlreadyExists",
         [4] = "Failed",
@@ -143,12 +201,12 @@ public class JobRestorer
     {
         [1] = "InvalidSearchString",
         [2] = "OutOfDownloadRetries",
-        [3] = "NoSuitableFileFound",
+        [3] = "NoMatchingResults",
         [4] = "AllDownloadsFailed",
         [5] = "Other",
     };
 
-    private static List<IndexEntry> ParseIndexEntries(string indexPath, string baseDir)
+    private static List<IndexEntry> ParseIndexEntries(string indexPath, string baseDir, ILogger logger)
     {
         var entries = new List<IndexEntry>();
         var lines = File.ReadAllLines(indexPath);
@@ -168,7 +226,9 @@ public class JobRestorer
             _ = int.TryParse(fields[6], out var stateInt);
             _ = int.TryParse(fields[7], out var failureInt);
 
-            var state = _stateMap.GetValueOrDefault(stateInt, "Initial");
+            var state = _stateMap.TryGetValue(stateInt, out var mapped) ? mapped : "Initial";
+            if (stateInt != 0 && !_stateMap.ContainsKey(stateInt))
+                logger.LogWarning("Unknown state index {StateInt} in {IndexPath}; defaulting to Initial", stateInt, indexPath);
             var failureReason = _failureMap.GetValueOrDefault(failureInt);
 
             string? downloadPath = null;
@@ -179,7 +239,7 @@ public class JobRestorer
                 if (File.Exists(absPath))
                 {
                     downloadPath = absPath;
-                    extension = Path.GetExtension(absPath).TrimStart('.').ToLower();
+                    extension = Path.GetExtension(absPath).TrimStart('.').ToLowerInvariant();
                 }
             }
 
@@ -204,7 +264,7 @@ public class JobRestorer
             FailureReason = FailureReason,
             DownloadPath = DownloadPath,
             Extension = Extension,
-            Progress = State is "Downloaded" or "AlreadyExists" ? 100 : 0,
+            Progress = State is "Done" or "AlreadyExists" ? 100 : 0,
         };
     }
 }

@@ -4,6 +4,7 @@
 @using ElectronNET.API
 @using ElectronNET.API.Entities
 @inject SettingsService SettingsService
+@inject AuthService AuthService
 @rendermode InteractiveServer
 
 <PageTitle>Settings</PageTitle>
@@ -15,19 +16,46 @@
 
     @if (saved)
     {
-        <div class="settings-saved">Settings saved.</div>
+        <div class="settings-saved">@savedMessage</div>
     }
 
     <div class="settings-group">
         <h3>Soulseek</h3>
         <div class="settings-field">
             <label for="slsk-user">Username</label>
-            <input id="slsk-user" type="text" @bind="model.SoulseekUsername" placeholder="Soulseek username" />
+            <input id="slsk-user" type="text" @bind="model.SoulseekUsername" placeholder="Soulseek username"
+                   disabled="@loginBusy" autocomplete="username" />
         </div>
         <div class="settings-field">
             <label for="slsk-pass">Password</label>
-            <input id="slsk-pass" type="password" @bind="model.SoulseekPassword" placeholder="Soulseek password" />
+            <input id="slsk-pass" type="password" @bind="model.SoulseekPassword" placeholder="Soulseek password"
+                   disabled="@loginBusy" autocomplete="current-password" />
         </div>
+
+        <div class="settings-login-row">
+            <button type="button" class="btn-settings-login" @onclick="LoginAndConnect" disabled="@loginBusy">
+                @if (loginBusy)
+                {
+                    <span class="login-spinner"></span>
+                    <span>@loginProgress</span>
+                }
+                else
+                {
+                    <span>Log in &amp; connect daemon</span>
+                }
+            </button>
+            @if (AuthService.IsLoggedIn && !string.IsNullOrWhiteSpace(model.SoulseekUsername))
+            {
+                <span class="settings-login-state">Signed in as @model.SoulseekUsername</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(loginFeedback))
+        {
+            <div class="@(loginFeedbackOk == true ? "settings-saved" : loginFeedbackOk == false ? "settings-login-error" : "settings-login-info")">
+                @loginFeedback
+            </div>
+        }
     </div>
 
     <div class="settings-group">
@@ -69,46 +97,6 @@
     </div>
 
     <div class="settings-group">
-        <h3>File Sharing</h3>
-        <div class="settings-field">
-            <label>
-                <input type="checkbox" @bind="model.EnableSharing" />
-                Enable file sharing
-            </label>
-        </div>
-        @if (model.EnableSharing)
-        {
-            <div class="settings-field">
-                <label for="share-port">Listen Port</label>
-                <input id="share-port" type="number" @bind="model.SharingListenPort" placeholder="50000" />
-            </div>
-            <div class="settings-field">
-                <label for="user-desc">User Description</label>
-                <input id="user-desc" type="text" @bind="model.UserDescription" placeholder="sldl-web" />
-            </div>
-            <div class="settings-field">
-                <label>Shared Directories</label>
-                @if (model.SharedDirectories.Any())
-                {
-                    <div class="shared-dirs-list">
-                        @for (int i = 0; i < model.SharedDirectories.Count; i++)
-                        {
-                            var idx = i;
-                            <div class="shared-dir-row">
-                                <span class="shared-dir-path">@model.SharedDirectories[idx]</span>
-                                <button class="btn-remove-arg" @onclick="() => RemoveSharedDir(idx)" title="Remove">×</button>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="shared-dir-add-row">
-                    <button class="btn-browse" @onclick="BrowseSharedDir">Browse…</button>
-                </div>
-            </div>
-        }
-    </div>
-
-    <div class="settings-group">
         <h3>Default Extra Arguments <span class="muted">(applied to every download)</span></h3>
         @if (model.DefaultExtraArgs.Any())
         {
@@ -147,16 +135,21 @@
         </div>
     </div>
 
-    <button class="btn-save" @onclick="Save">Save</button>
+    <button class="btn-save" @onclick="Save" disabled="@loginBusy">Save</button>
 </section>
 
 @code {
     private AppSettings model = new();
     private bool saved;
+    private string savedMessage = "Settings saved.";
 
     private string selectedArgFlag = "";
     private string pendingArgValue = "";
 
+    private bool loginBusy;
+    private string loginProgress = "";
+    private string? loginFeedback;
+    private bool? loginFeedbackOk;
 
     private KnownArg? SelectedKnown =>
         KnownArg.All.FirstOrDefault(a => a.Flag == selectedArgFlag);
@@ -204,33 +197,68 @@
         }
     }
 
-    private async Task BrowseSharedDir()
+    private async Task LoginAndConnect()
     {
-        if (!HybridSupport.IsElectronActive) return;
-        var mainWindow = Electron.WindowManager.BrowserWindows.First();
-        var result = await Electron.Dialog.ShowOpenDialogAsync(mainWindow, new OpenDialogOptions
-        {
-            Title = "Select Shared Directory",
-            Properties = new[] { OpenDialogProperty.openDirectory }
-        });
-        if (result?.Length > 0)
-        {
-            var dir = result[0];
-            if (!model.SharedDirectories.Contains(dir))
-                model.SharedDirectories.Add(dir);
-            await InvokeAsync(StateHasChanged);
-        }
-    }
+        saved = false;
+        loginFeedback = null;
+        loginFeedbackOk = null;
 
-    private void RemoveSharedDir(int index)
-    {
-        if (index >= 0 && index < model.SharedDirectories.Count)
-            model.SharedDirectories.RemoveAt(index);
+        if (string.IsNullOrWhiteSpace(model.SoulseekUsername) || string.IsNullOrWhiteSpace(model.SoulseekPassword))
+        {
+            loginFeedbackOk = false;
+            loginFeedback = "Username and password are required.";
+            return;
+        }
+
+        loginBusy = true;
+        loginProgress = "Checking Soulseek credentials…";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            // Persist current field values first so other settings aren't lost,
+            // then AuthService validates Soulseek and restarts the daemon.
+            SettingsService.Update(model);
+
+            loginProgress = "Connecting to Soulseek…";
+            await InvokeAsync(StateHasChanged);
+
+            var (success, error, daemonOk, daemonMessage) = await AuthService.LoginAsync(
+                model.SoulseekUsername.Trim(),
+                model.SoulseekPassword);
+
+            if (!success)
+            {
+                loginFeedbackOk = false;
+                loginFeedback = error ?? "Login failed.";
+                return;
+            }
+
+            loginFeedbackOk = daemonOk;
+            loginFeedback = string.IsNullOrEmpty(daemonMessage)
+                ? $"Logged in as {model.SoulseekUsername}."
+                : $"Logged in as {model.SoulseekUsername}. {daemonMessage}";
+        }
+        finally
+        {
+            loginBusy = false;
+            loginProgress = "";
+        }
     }
 
     private void Save()
     {
+        var previous = SettingsService.Get();
+        var credentialsChanged =
+            !string.Equals(previous.SoulseekUsername, model.SoulseekUsername, StringComparison.Ordinal)
+            || !string.Equals(previous.SoulseekPassword, model.SoulseekPassword, StringComparison.Ordinal);
+
         SettingsService.Update(model);
+
         saved = true;
+        savedMessage = credentialsChanged
+            ? "Settings saved. Click “Log in & connect daemon” to apply Soulseek credentials."
+            : "Settings saved.";
+        loginFeedback = null;
     }
 }

@@ -1,5 +1,6 @@
 using ElectronNET.API;
 using ElectronNET.API.Entities;
+using Sockseek.Api;
 using SldlWeb.Components;
 using SldlWeb.Hubs;
 using SldlWeb.Services;
@@ -15,12 +16,30 @@ builder.Services.AddRazorComponents()
     });
 
 builder.Services.AddSignalR();
+
+// Daemon-first integration: configure HTTP client for sldl daemon
+var daemonUrl = builder.Configuration["SldlDaemonUrl"] ?? "http://localhost:5030";
+builder.Services.AddHttpClient("SldlDaemon", client =>
+{
+    client.BaseAddress = new Uri(daemonUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddSingleton<SockseekApiClient>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("SldlDaemon");
+    return new SockseekApiClient(http, SockseekApiJson.CreateSerializerOptions());
+});
+
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<JobRestorer>();
 builder.Services.AddSingleton<DownloadService>();
 builder.Services.AddSingleton<BpmService>();
-builder.Services.AddHostedService<SharingService>();
+builder.Services.AddSingleton<DaemonLauncherService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DaemonLauncherService>());
+builder.Services.AddHostedService<SldlEventBridge>();
+// NOTE: SharingService removed (Phase 6: Remove Sharing Feature)
 
 var app = builder.Build();
 

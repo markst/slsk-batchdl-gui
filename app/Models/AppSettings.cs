@@ -11,9 +11,5 @@ public class AppSettings
     public string SpotifyClientSecret { get; set; } = BuildDefaults.SpotifyClientSecret;
     public List<ExtraArg> DefaultExtraArgs { get; set; } = new();
 
-    // File sharing
-    public bool EnableSharing { get; set; } = false;
-    public List<string> SharedDirectories { get; set; } = new();
-    public int SharingListenPort { get; set; } = 50000;
     public string UserDescription { get; set; } = "";
 }

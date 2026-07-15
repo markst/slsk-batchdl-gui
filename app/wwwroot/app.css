@@ -487,17 +487,19 @@ a:hover { text-decoration: underline; }
 }
 
 /* State-based row styling */
-.state-downloaded .track-title,
+.state-done .track-title,
 .state-alreadyexists .track-title { color: #6ee7b7; }
 .state-failed .track-title { color: #f87171; }
 .state-downloading .track-title { color: #fbbf24; }
 .state-searching .track-title { color: #93c5fd; }
+.state-awaitingselection .track-title { color: #c4b5fd; }
 
-.state-downloaded .state-label { color: #6ee7b7; }
+.state-done .state-label { color: #6ee7b7; }
 .state-alreadyexists .state-label { color: #6ee7b7; }
 .state-failed .state-label { color: #f87171; }
 .state-found .state-label { color: #93c5fd; }
 .state-searching .state-label { color: #93c5fd; }
+.state-awaitingselection .state-label { color: #c4b5fd; }
 
 /* ===== Play Button ===== */
 .btn-play {
@@ -593,6 +595,7 @@ a:hover { text-decoration: underline; }
     transition: opacity 0.2s;
 }
 .btn-save:hover { opacity: 0.85; }
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .settings-saved {
     background: #1a2a1a;
@@ -602,6 +605,57 @@ a:hover { text-decoration: underline; }
     border-radius: 6px;
     font-size: 0.8rem;
     margin-bottom: 1rem;
+}
+
+.settings-login-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.btn-settings-login {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #1a2a22;
+    color: #6ee7b7;
+    border: 1px solid #2a4a3a;
+    border-radius: 6px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+}
+.btn-settings-login:hover:not(:disabled) { background: #22352b; }
+.btn-settings-login:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.settings-login-state {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.settings-login-error {
+    background: rgba(231, 76, 60, 0.12);
+    border: 1px solid #e74c3c;
+    color: #f5a9a0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.settings-login-info {
+    background: #1a1a2a;
+    border: 1px solid #2a2a4a;
+    color: #a0a0e0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
 }
 
 /* ===== File Sharing Settings ===== */

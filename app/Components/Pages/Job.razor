@@ -84,7 +84,7 @@ else
             {
                 @foreach (var album in AlbumGroups())
                 {
-                    var done = album.Count(t => t.State is "Downloaded" or "AlreadyExists");
+                    var done = album.Count(t => t.State is "Done" or "AlreadyExists");
                     var failed = album.Count(t => t.State == "Failed");
                     var total = album.Count();
                     var albumPct = total > 0 ? Math.Round((double)done / total * 100, 1) : 0;
@@ -146,11 +146,18 @@ else
     private Task? _bpmTask;
     private int _bpmGeneration;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
+        // Only load job data here — SignalR and timer are set up in OnAfterRenderAsync
+        // so they don't run during server-side prerendering (which runs OnInitialized twice).
         job = DownloadService.GetJob(JobId);
+    }
 
-        // Poll job state every 500ms for model updates from the reporter
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Poll job state every 500ms for model updates
         refreshTimer = new System.Threading.Timer(_ =>
         {
             InvokeAsync(() =>
@@ -160,7 +167,7 @@ else
             });
         }, null, 500, 500);
 
-        // Also connect SignalR for immediate push updates
+        // Connect SignalR for immediate push updates
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Nav.ToAbsoluteUri("/downloadHub"))
             .WithAutomaticReconnect()
@@ -204,7 +211,16 @@ else
             }
         });
 
-        await hubConnection.StartAsync();
+        try
+        {
+            await hubConnection.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            // Log and swallow — hub unavailable shouldn't terminate the circuit.
+            // The hub connection will retry via WithAutomaticReconnect().
+            Console.Error.WriteLine($"[Job] SignalR hub connection failed: {ex.Message}");
+        }
     }
 
     private void Cancel()
@@ -356,7 +372,7 @@ else
     private int? playingIndex;
 
     private static bool IsPlayable(TrackInfo track) =>
-        (track.State is "Downloaded" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
+        (track.State is "Done" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
 
     private void Play(int idx)
     {
@@ -389,8 +405,9 @@ else
         "Searching" => "Searching...",
         "Found" => "Found",
         "Downloading" => "Downloading...",
-        "Downloaded" => "Done",
+        "Done" => "Done",
         "AlreadyExists" => "Exists",
+        "AwaitingSelection" => "Awaiting selection",
         "Failed" => track.FailureReason ?? "Failed",
         _ => track.State
     };

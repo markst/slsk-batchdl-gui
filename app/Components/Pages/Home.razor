@@ -224,7 +224,7 @@ else
                 _selfRef ??= DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("registerPasteHandler", _selfRef, ".input-textarea-main");
             }
-            profiles = DownloadService.GetAvailableProfiles();
+            profiles = await DownloadService.GetAvailableProfilesAsync();
             RefreshJobs();
             refreshTimer = new System.Threading.Timer(_ =>
             {
