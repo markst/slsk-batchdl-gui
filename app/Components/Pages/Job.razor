@@ -235,9 +235,70 @@ else
         job = DownloadService.GetJob(JobId);
     }
 
-    private void RetryTrack(int idx)
+    private int? editingTrackIndex;
+    private string editArtist = "";
+    private string editTitle = "";
+    /// <summary>Per-track yt-dlp preference for the next retry (not persisted on the job).</summary>
+    private readonly Dictionary<int, bool> retryYtDlpByIndex = new();
+
+    private void BeginEditTrack(int idx)
     {
-        DownloadService.RetryTrack(JobId, idx);
+        if (job is null || idx < 0 || idx >= job.Tracks.Count) return;
+        var track = job.Tracks[idx];
+        editingTrackIndex = idx;
+        editArtist = track.Artist;
+        editTitle = track.Title;
+    }
+
+    private void CancelEditTrack()
+    {
+        editingTrackIndex = null;
+    }
+
+    private void RetryTrackAt(int idx)
+    {
+        if (job is null || idx < 0 || idx >= job.Tracks.Count) return;
+
+        string? artist = null;
+        string? title = null;
+        if (editingTrackIndex == idx)
+        {
+            artist = editArtist;
+            title = editTitle;
+        }
+
+        var useYtDlp = retryYtDlpByIndex.TryGetValue(idx, out var flagged)
+            ? flagged
+            : job.ExtraArgs.Any(a => string.Equals(a.Flag, "--yt-dlp", StringComparison.OrdinalIgnoreCase));
+
+        DownloadService.RetryTrack(
+            JobId,
+            idx,
+            artist: artist,
+            title: title,
+            useYtDlp: useYtDlp);
+        editingTrackIndex = null;
+        retryYtDlpByIndex.Remove(idx);
+        job = DownloadService.GetJob(JobId);
+    }
+
+    private bool GetRetryYtDlp(int idx)
+    {
+        if (retryYtDlpByIndex.TryGetValue(idx, out var v))
+            return v;
+        return job?.ExtraArgs.Any(a =>
+            string.Equals(a.Flag, "--yt-dlp", StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    private void SetRetryYtDlp(int idx, bool value)
+        => retryYtDlpByIndex[idx] = value;
+
+    private static bool IsNoSoulseekMatchFailure(TrackInfo track)
+    {
+        var reason = track.FailureReason ?? "";
+        return reason.Contains("NoMatchingResults", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("No Soulseek", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("No matching results", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task AnalyzeBpm(int idx)
@@ -285,7 +346,8 @@ else
     private RenderFragment TrackRow(TrackInfo track, int number) => __builder =>
     {
         var idx = job!.Tracks.IndexOf(track);
-        <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "")">
+        var editing = editingTrackIndex == idx && track.State == "Failed";
+        <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "") @(editing ? "track-editing" : "")">
             <div class="track-index">
                 @if (IsPlayable(track))
                 {
@@ -306,8 +368,28 @@ else
                 }
             </div>
             <div class="track-info">
-                <div class="track-title">@track.Title</div>
-                <div class="track-artist">@track.Artist</div>
+                @if (editing)
+                {
+                    <input class="track-inline-input track-inline-title"
+                           @bind="editTitle"
+                           @bind:event="oninput"
+                           placeholder="Title"
+                           aria-label="Title" />
+                    <input class="track-inline-input track-inline-artist"
+                           @bind="editArtist"
+                           @bind:event="oninput"
+                           placeholder="Artist"
+                           aria-label="Artist" />
+                    @if (IsNoSoulseekMatchFailure(track))
+                    {
+                        <div class="track-retry-hint">No Soulseek matches — try different search text or yt-dlp.</div>
+                    }
+                }
+                else
+                {
+                    <div class="track-title">@track.Title</div>
+                    <div class="track-artist">@track.Artist</div>
+                }
             </div>
             <div class="track-meta">
                 @if (!string.IsNullOrEmpty(track.Username))
@@ -353,7 +435,26 @@ else
                 else if (track.State == "Failed")
                 {
                     <span class="state-label">@FormatState(track)</span>
-                    <button class="btn-retry" @onclick="() => RetryTrack(idx)" title="Retry">&#8635;</button>
+                    <div class="track-failed-actions">
+                        <label class="track-retry-ytdlp" title="Use yt-dlp fallback on retry">
+                            <input type="checkbox"
+                                   checked="@GetRetryYtDlp(idx)"
+                                   @onchange="e => SetRetryYtDlp(idx, (bool)(e.Value ?? false))" />
+                            yt-dlp
+                        </label>
+                        @if (editing)
+                        {
+                            <button class="btn-edit-done" @onclick="CancelEditTrack" title="Done editing">Done</button>
+                        }
+                        else
+                        {
+                            <button class="btn-edit" @onclick="() => BeginEditTrack(idx)" title="Edit artist / title">Edit</button>
+                        }
+                        <button class="btn-retry"
+                                @onclick="() => RetryTrackAt(idx)"
+                                title="Retry"
+                                disabled="@(editing && string.IsNullOrWhiteSpace(editTitle))">&#8635;</button>
+                    </div>
                 }
                 else
                 {
@@ -408,9 +509,20 @@ else
         "Done" => "Done",
         "AlreadyExists" => "Exists",
         "AwaitingSelection" => "Awaiting selection",
-        "Failed" => track.FailureReason ?? "Failed",
+        "Failed" => HumanizeFailure(track.FailureReason) ?? "Failed",
         _ => track.State
     };
+
+    private static string? HumanizeFailure(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return reason;
+        // Exact enum name from DaemonStateMapper when no FailureMessage was attached.
+        if (string.Equals(reason, "NoMatchingResults", StringComparison.Ordinal))
+            return "No matching results";
+        if (reason.StartsWith("NoMatchingResults:", StringComparison.Ordinal))
+            return "No matching results: " + reason["NoMatchingResults:".Length..].TrimStart();
+        return reason;
+    }
 
     public async ValueTask DisposeAsync()
     {

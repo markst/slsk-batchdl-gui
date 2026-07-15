@@ -369,7 +369,87 @@ a:hover { text-decoration: underline; }
     flex-shrink: 0;
     transition: border-color 0.2s, color 0.2s;
 }
-.btn-retry:hover { border-color: #fbbf24; color: #fbbf24; }
+.btn-retry:hover:not(:disabled) { border-color: #fbbf24; color: #fbbf24; }
+.btn-retry:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.track-row.track-editing {
+    background: #161616;
+    align-items: flex-start;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+}
+
+.track-inline-input {
+    display: block;
+    width: 100%;
+    max-width: 28rem;
+    background: #0f0f0f;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 0.3rem 0.5rem;
+    font-size: inherit;
+    font-family: inherit;
+    margin: 0 0 0.25rem;
+}
+
+.track-inline-input:focus {
+    outline: none;
+    border-color: #6ee7b7;
+}
+
+.track-inline-title {
+    font-weight: 500;
+}
+
+.track-inline-artist {
+    color: #bbb;
+    font-size: 0.85em;
+}
+
+.track-retry-hint {
+    margin: 0.15rem 0 0.25rem;
+    font-size: 0.72rem;
+    color: #fbbf24;
+}
+
+.track-retry-ytdlp {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+    font-size: 0.75rem;
+    color: #aaa;
+    cursor: pointer;
+}
+
+.track-failed-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.35rem;
+}
+
+.btn-edit,
+.btn-edit-done {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    border-radius: 6px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.btn-edit:hover,
+.btn-edit-done:hover {
+    border-color: #93c5fd;
+    color: #93c5fd;
+}
 
 .error-banner {
     background: #2a1515;
