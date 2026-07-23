@@ -142,7 +142,7 @@ public class DownloadService
         if (!_jobs.TryGetValue(jobId, out var job)) return false;
         if (trackIndex < 0 || trackIndex >= job.Tracks.Count) return false;
         var track = job.Tracks[trackIndex];
-        if (track.State is not "Failed") return false;
+        if (track.State is not ("Failed" or "Initial")) return false;
 
         if (artist is not null) track.Artist = artist.Trim();
         if (title is not null) track.Title = title.Trim();
@@ -174,12 +174,17 @@ public class DownloadService
         if (!_jobs.TryGetValue(id, out var job)) return false;
         if (job.Status is JobStatus.Running or JobStatus.Queued) return false;
 
+        var pending = job.Tracks
+            .Where(t => t.State is "Failed" or "Initial")
+            .Where(t => !string.IsNullOrWhiteSpace(t.Title) || !string.IsNullOrWhiteSpace(t.Artist))
+            .ToList();
+
         job.Status = JobStatus.Queued;
         job.Error = null;
         job.CompletedAt = null;
         job.Cts = new CancellationTokenSource();
 
-        foreach (var track in job.Tracks.Where(t => t.State is "Failed" or "Initial"))
+        foreach (var track in pending)
         {
             track.State = "Initial";
             track.DaemonJobId = null;
@@ -190,7 +195,14 @@ public class DownloadService
         }
 
         _ = _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
-        _ = Task.Run(() => ProcessJobAsync(job));
+
+        // Prefer resuming the known pending track list. Restored index-only jobs used to
+        // store the folder name as Input, which made Resume search for the job id.
+        if (pending.Count > 0)
+            _ = Task.Run(() => ProcessPendingTracksAsync(job, pending));
+        else
+            _ = Task.Run(() => ProcessJobAsync(job));
+
         return true;
     }
 
@@ -363,6 +375,78 @@ public class DownloadService
     }
 
     // ── Private: job submission ────────────────────────────────────────────
+
+    /// <summary>
+    /// Resume only Failed/Initial tracks as a Sockseek list extract, without
+    /// re-submitting the original Spotify/YouTube URL or a bogus folder-name Input.
+    /// </summary>
+    private async Task ProcessPendingTracksAsync(DownloadJob job, IReadOnlyList<TrackInfo> pending)
+    {
+        try
+        {
+            job.Status = JobStatus.Running;
+            await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
+
+            var workflowId = Guid.NewGuid();
+            var s = _settings.Get();
+
+            _jobToWorkflow[job.Id] = workflowId;
+            _workflowToJob[workflowId] = job.Id;
+
+            Directory.CreateDirectory(job.DownloadPath);
+            var path = Path.Combine(job.DownloadPath, "resume-input.txt");
+            var lines = string.Join('\n', pending.Select(t =>
+            {
+                var artist = (t.Artist ?? "").Trim();
+                var title = (t.Title ?? "").Trim();
+                return artist.Length > 0 && title.Length > 0
+                    ? $"{artist} - {title}"
+                    : (artist.Length > 0 ? artist : title);
+            }));
+            var content = FormatTracklistForSockseek(lines, job.AlbumMode);
+            await File.WriteAllTextAsync(path, content, job.Cts.Token);
+
+            _logger.LogInformation(
+                "[{JobId}] Resuming {Count} pending track(s) via {Path}",
+                job.Id, pending.Count, path);
+
+            var extractOptions = BuildSubmissionOptions(job, workflowId, s, InputType.Tracklist);
+            var summary = await SubmitExtractAsync(
+                path,
+                ToDaemonInputTypeString(InputType.Tracklist),
+                extractOptions,
+                job.Cts.Token);
+
+            if (summary is null)
+                throw new InvalidOperationException("Daemon returned no job summary after resume submission.");
+
+            if (summary.WorkflowId != workflowId)
+            {
+                _logger.LogDebug("Daemon assigned workflow {Actual} (requested {Requested})",
+                    summary.WorkflowId, workflowId);
+                _workflowToJob.TryRemove(workflowId, out _);
+                _workflowToJob[summary.WorkflowId] = job.Id;
+                _jobToWorkflow[job.Id] = summary.WorkflowId;
+            }
+
+            await WaitForWorkflowAsync(summary.WorkflowId, job);
+        }
+        catch (OperationCanceledException)
+        {
+            job.Status = JobStatus.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Job {Id} resume failed", job.Id);
+            job.Status = JobStatus.Failed;
+            job.Error = ex.Message;
+        }
+        finally
+        {
+            job.CompletedAt ??= DateTime.UtcNow;
+            await _hub.Clients.All.SendAsync("JobUpdated", job.Id, job.Status.ToString());
+        }
+    }
 
     private async Task ProcessJobAsync(DownloadJob job)
     {
@@ -693,15 +777,83 @@ public class DownloadService
                 ops.Add(DownloadSettingsDeltaMapper.Set("Extraction.RequestedMode", Sockseek.Core.ExtractionMode.Album));
         }
 
+        // Point standalone song/list retries at the job's existing index so sockseek
+        // updates Drivers/_index.csv (or similar) instead of skipping index writes.
+        var indexPath = ResolveIndexFilePath(job);
+        if (!string.IsNullOrWhiteSpace(indexPath))
+        {
+            ops.Add(DownloadSettingsDeltaMapper.Set("Output.WriteIndex", true));
+            ops.Add(DownloadSettingsDeltaMapper.Set("Output.HasConfiguredIndex", true));
+            ops.Add(DownloadSettingsDeltaMapper.Set("Output.IndexFilePath", indexPath));
+        }
+
         var downloadSettings = ops.Count == 0
             ? null
             : DownloadSettingsPatchDtoMapper.FromOperations(ops);
 
         return new SubmissionOptionsDto(
             WorkflowId: workflowId,
-            OutputParentDir: job.DownloadPath,
+            OutputParentDir: ResolveOutputParentDir(job),
             ProfileNames: profiles.Count > 0 ? profiles : null,
             DownloadSettings: downloadSettings);
+    }
+
+    /// <summary>
+    /// Prefer the shared folder of already-downloaded tracks (e.g. Drivers/) when
+    /// retries would otherwise land in the bare job root.
+    /// </summary>
+    private static string ResolveOutputParentDir(DownloadJob job)
+    {
+        var dirs = job.Tracks
+            .Select(t => t.DownloadPath)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => Path.GetDirectoryName(Path.GetFullPath(p!)))
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (dirs.Count == 1)
+            return dirs[0]!;
+
+        return job.DownloadPath;
+    }
+
+    /// <summary>
+    /// Existing sockseek index for this job, if any. Used so single-track retries
+    /// update the same <c>_index.csv</c> the original list/playlist wrote.
+    /// </summary>
+    private static string? ResolveIndexFilePath(DownloadJob job)
+    {
+        if (!string.IsNullOrWhiteSpace(job.IndexFilePath) && File.Exists(job.IndexFilePath))
+            return Path.GetFullPath(job.IndexFilePath);
+
+        var outputDir = ResolveOutputParentDir(job);
+        var besideOutput = Path.Combine(outputDir, "_index.csv");
+        if (File.Exists(besideOutput))
+            return Path.GetFullPath(besideOutput);
+
+        // Walk up from content dir to job root for a nested index.
+        var searchRoot = job.DownloadPath;
+        if (Directory.Exists(searchRoot))
+        {
+            var found = Directory.GetFiles(searchRoot, "_index.csv", SearchOption.AllDirectories)
+                .OrderBy(f => f.Length)
+                .FirstOrDefault();
+            if (found is not null)
+                return Path.GetFullPath(found);
+
+            var parent = Directory.GetParent(searchRoot)?.FullName;
+            if (parent is not null && Directory.Exists(parent))
+            {
+                found = Directory.GetFiles(parent, "_index.csv", SearchOption.AllDirectories)
+                    .OrderBy(f => f.Length)
+                    .FirstOrDefault();
+                if (found is not null)
+                    return Path.GetFullPath(found);
+            }
+        }
+
+        return null;
     }
 
     private static string ToDaemonInputTypeString(InputType inputType)
