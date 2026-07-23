@@ -250,8 +250,19 @@ else
         editTitle = track.Title;
     }
 
-    private void CancelEditTrack()
+    private void SaveEditTrack()
     {
+        if (job is null || editingTrackIndex is null) return;
+        var idx = editingTrackIndex.Value;
+        if (idx < 0 || idx >= job.Tracks.Count)
+        {
+            editingTrackIndex = null;
+            return;
+        }
+
+        var track = job.Tracks[idx];
+        track.Artist = editArtist.Trim();
+        track.Title = editTitle.Trim();
         editingTrackIndex = null;
     }
 
@@ -259,25 +270,21 @@ else
     {
         if (job is null || idx < 0 || idx >= job.Tracks.Count) return;
 
-        string? artist = null;
-        string? title = null;
+        // Flush any in-progress inline edit before starting/retrying.
         if (editingTrackIndex == idx)
-        {
-            artist = editArtist;
-            title = editTitle;
-        }
+            SaveEditTrack();
 
         var useYtDlp = retryYtDlpByIndex.TryGetValue(idx, out var flagged)
             ? flagged
             : job.ExtraArgs.Any(a => string.Equals(a.Flag, "--yt-dlp", StringComparison.OrdinalIgnoreCase));
 
+        var track = job.Tracks[idx];
         DownloadService.RetryTrack(
             JobId,
             idx,
-            artist: artist,
-            title: title,
+            artist: track.Artist,
+            title: track.Title,
             useYtDlp: useYtDlp);
-        editingTrackIndex = null;
         retryYtDlpByIndex.Remove(idx);
         job = DownloadService.GetJob(JobId);
     }
@@ -346,8 +353,9 @@ else
     private RenderFragment TrackRow(TrackInfo track, int number) => __builder =>
     {
         var idx = job!.Tracks.IndexOf(track);
-        var editing = editingTrackIndex == idx && track.State == "Failed";
-        <div class="track-row state-@track.State.ToLower() @(playingIndex == idx ? "track-playing" : "") @(editing ? "track-editing" : "")">
+        var pending = IsPendingTrack(track);
+        var editing = editingTrackIndex == idx && pending;
+        <div class="track-row state-@(string.IsNullOrEmpty(track.State) ? "initial" : track.State.ToLower()) @(playingIndex == idx ? "track-playing" : "") @(editing ? "track-editing" : "")">
             <div class="track-index">
                 @if (IsPlayable(track))
                 {
@@ -423,6 +431,31 @@ else
                         <button class="btn-bpm" @onclick="() => AnalyzeBpm(idx)" title="Analyze BPM">&#9835; BPM</button>
                     }
                 }
+                @if (IsPendingTrack(track))
+                {
+                    <div class="track-actions">
+                        <label class="track-retry-ytdlp" title="Use yt-dlp fallback when starting">
+                            <input type="checkbox"
+                                   checked="@GetRetryYtDlp(idx)"
+                                   @onchange="e => SetRetryYtDlp(idx, (bool)(e.Value ?? false))" />
+                            yt-dlp
+                        </label>
+                        @if (editing)
+                        {
+                            <button class="btn-edit-done" @onclick="SaveEditTrack" title="Save artist / title">Done</button>
+                        }
+                        else
+                        {
+                            <button class="btn-edit" @onclick="() => BeginEditTrack(idx)" title="Edit artist / title">Edit</button>
+                        }
+                        <button class="btn-retry"
+                                @onclick="() => RetryTrackAt(idx)"
+                                title="@(track.State == "Failed" ? "Retry" : "Start")"
+                                disabled="@(editing && string.IsNullOrWhiteSpace(editTitle))">
+                            @(track.State == "Failed" ? "↺" : "▶")
+                        </button>
+                    </div>
+                }
             </div>
             <div class="track-state">
                 @if (track.State == "Downloading" && track.TotalBytes > 0)
@@ -431,30 +464,6 @@ else
                         <div class="track-progress-fill" style="width: @track.Progress%"></div>
                     </div>
                     <span class="track-percent">@track.Progress.ToString("F0")%</span>
-                }
-                else if (track.State == "Failed")
-                {
-                    <span class="state-label">@FormatState(track)</span>
-                    <div class="track-failed-actions">
-                        <label class="track-retry-ytdlp" title="Use yt-dlp fallback on retry">
-                            <input type="checkbox"
-                                   checked="@GetRetryYtDlp(idx)"
-                                   @onchange="e => SetRetryYtDlp(idx, (bool)(e.Value ?? false))" />
-                            yt-dlp
-                        </label>
-                        @if (editing)
-                        {
-                            <button class="btn-edit-done" @onclick="CancelEditTrack" title="Done editing">Done</button>
-                        }
-                        else
-                        {
-                            <button class="btn-edit" @onclick="() => BeginEditTrack(idx)" title="Edit artist / title">Edit</button>
-                        }
-                        <button class="btn-retry"
-                                @onclick="() => RetryTrackAt(idx)"
-                                title="Retry"
-                                disabled="@(editing && string.IsNullOrWhiteSpace(editTitle))">&#8635;</button>
-                    </div>
                 }
                 else
                 {
@@ -474,6 +483,9 @@ else
 
     private static bool IsPlayable(TrackInfo track) =>
         (track.State is "Done" or "AlreadyExists") && !string.IsNullOrEmpty(track.DownloadPath);
+
+    private static bool IsPendingTrack(TrackInfo track) =>
+        track.State is "Failed" or "Initial";
 
     private void Play(int idx)
     {
@@ -502,7 +514,7 @@ else
 
     private static string FormatState(TrackInfo track) => track.State switch
     {
-        "Initial" => "",
+        "Initial" => "Pending",
         "Searching" => "Searching...",
         "Found" => "Found",
         "Downloading" => "Downloading...",
