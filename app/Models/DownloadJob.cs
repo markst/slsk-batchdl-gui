@@ -71,6 +71,11 @@ public class DownloadJob
     public DateTime? CompletedAt { get; set; }
     public string? Error { get; set; }
     public string DownloadPath { get; set; } = "";
+    /// <summary>
+    /// Existing sockseek <c>_index.csv</c> for this job (e.g. nested Drivers/_index.csv).
+    /// Retries pass this as Output.IndexFilePath so sockseek updates the same file.
+    /// </summary>
+    public string? IndexFilePath { get; set; }
     public bool AlbumMode { get; set; }
     public string? Profile { get; set; }
     public List<TrackInfo> Tracks { get; set; } = new();

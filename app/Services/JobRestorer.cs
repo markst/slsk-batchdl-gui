@@ -119,9 +119,12 @@ public class JobRestorer
         }
         else
         {
-            input = dirName;
+            // Index-only restore (e.g. nested Drivers/_index.csv with no tracks.csv /
+            // input.txt). Never use the folder name as Input — Resume would treat the
+            // job id as a free-text search string.
             tracks = indexResults.Select(e => e.ToTrackInfo()).ToList();
-            inputType = InputTypeDetector.Detect(input);
+            input = BuildTracklistInput(tracks);
+            inputType = InputType.Tracklist;
         }
 
         if (tracks.Count == 0 && indexResults.Count == 0 && string.IsNullOrWhiteSpace(input))
@@ -133,6 +136,13 @@ public class JobRestorer
             : failed > 0 && downloaded == 0 ? JobStatus.Failed
             : JobStatus.Completed;
 
+        // If sockseek wrote a single nested output folder (e.g. Drivers/_index.csv),
+        // point DownloadPath there so retries land beside the existing files.
+        var downloadPath = ResolveContentDirectory(dir);
+        var indexFilePath = Directory.GetFiles(dir, "_index.csv", SearchOption.AllDirectories)
+            .OrderBy(f => f.Length) // prefer shorter / more specific when tied
+            .FirstOrDefault();
+
         var job = new DownloadJob
         {
             Id = id,
@@ -141,7 +151,8 @@ public class JobRestorer
             Status = status,
             CreatedAt = createdAt,
             CompletedAt = createdAt,
-            DownloadPath = dir,
+            DownloadPath = downloadPath,
+            IndexFilePath = indexFilePath,
             Tracks = tracks,
         };
 
@@ -150,6 +161,44 @@ public class JobRestorer
             id, dirName, tracks.Count, downloaded, failed);
 
         return job;
+    }
+
+    /// <summary>
+    /// Prefer a single nested folder that holds <c>_index.csv</c> (and the media),
+    /// e.g. <c>{jobId}/Drivers</c>, over the bare job root.
+    /// </summary>
+    private static string ResolveContentDirectory(string jobDir)
+    {
+        var indexDirs = Directory.GetFiles(jobDir, "_index.csv", SearchOption.AllDirectories)
+            .Select(f => Path.GetDirectoryName(f)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (indexDirs.Count == 1)
+            return indexDirs[0];
+
+        return jobDir;
+    }
+
+    /// <summary>
+    /// Rebuild a pasteable "Artist - Title" list from restored index rows so Resume
+    /// can submit a Sockseek list extract instead of searching the job folder name.
+    /// </summary>
+    private static string BuildTracklistInput(IReadOnlyList<TrackInfo> tracks)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var t in tracks)
+        {
+            var artist = (t.Artist ?? "").Trim();
+            var title = (t.Title ?? "").Trim();
+            if (artist.Length == 0 && title.Length == 0)
+                continue;
+            if (artist.Length > 0 && title.Length > 0)
+                sb.Append(artist).Append(" - ").Append(title).AppendLine();
+            else
+                sb.Append(artist.Length > 0 ? artist : title).AppendLine();
+        }
+        return sb.ToString().TrimEnd();
     }
 
     private static List<TrackInfo> CrossReference(
